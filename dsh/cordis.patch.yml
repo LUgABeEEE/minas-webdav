@@ -1,0 +1,21 @@
+# dsh-minas-webdav — bundle patch
+#
+# Registers the minas-webdav MCP server as one stdio row. The Python package
+# behind it must be installed first:
+#
+#   pipx install 'minas-webdav[mcp]'     # provides minas-webdav-mcp
+#
+# Credentials and the mTLS certificate stay in local files; nothing secret is
+# part of this patch. See ./README.md.
+#
+# Rollback without uninstalling: target the row id from the profile patch.
+#
+#   - id: mcp-minas-webdav
+#     disabled: true
+- insert:
+    - id: mcp-minas-webdav
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: minas-webdav
+        transport: stdio
+        command: minas-webdav-mcp

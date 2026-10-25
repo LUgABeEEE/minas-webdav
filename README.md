@@ -154,6 +154,14 @@ pipx install 'minas-webdav[mcp]'   # 提供 minas-webdav-mcp
 
 </details>
 
+或者一行装完（DSH 插件，会替你插入同样的那行配置）：
+
+```bash
+dsh plugin add dsh-minas-webdav
+```
+
+装完可用 `dsh plugin` 的补丁关掉它（`- id: mcp-minas-webdav` + `disabled: true`）。
+
 证书与凭据只放本机（默认 `~/.dsh/minasCert`、`~/.dsh/minasCred/credentials.env`，可用
 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖），MCP 配置里不出现任何凭据。
 
