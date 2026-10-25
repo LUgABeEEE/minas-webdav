@@ -124,18 +124,40 @@ docs/          # webdav-surface.md 协议实测结论
 Copy-Item -Recurse skill "$HOME\.config\mimocode\skills\minas-webdav"
 ```
 
-注册 MCP（`~/.config/mimocode/mimocode.jsonc` 的 `mcp` 段）：
+注册 MCP（任意 MCP 客户端，stdio）：
+
+```bash
+pipx install 'minas-webdav[mcp]'   # 提供 minas-webdav-mcp
+```
 
 ```jsonc
+// 通用 mcpServers 形式
 "minas-webdav": {
-  "type": "local",
-  "command": ["<python>", "-m", "minas_webdav.mcp_server"],
-  "environment": { "PYTHONPATH": "<本仓库路径>" },
-  "enabled": true
+  "command": "minas-webdav-mcp",
+  "args": []
 }
 ```
 
-MCP 依赖装在项目 venv（`pip install mcp`，2.x）。改 CLI 后请同步更新 SKILL.md 命令表与 MCP 工具签名。
+<details>
+<summary>DeepSeek Harness 写法</summary>
+
+```yaml
+# ~/.dsh/profiles/web/cordis.patch.yml
+- insert:
+    - id: mcp-minas
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: minas
+        transport: stdio
+        command: minas-webdav-mcp
+```
+
+</details>
+
+证书与凭据只放本机（默认 `~/.dsh/minasCert`、`~/.dsh/minasCred/credentials.env`，可用
+`MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖），MCP 配置里不出现任何凭据。
+
+改 CLI 后请同步更新 SKILL.md 命令表与 MCP 工具签名。
 
 ## License
 
