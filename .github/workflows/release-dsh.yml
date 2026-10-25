@@ -1,11 +1,20 @@
 name: Release DSH plugin
 
 # Publishes the npm bundle in dsh/ with npm Trusted Publishing (OIDC).
-# One-time setup on npmjs.com: package dsh-minas-webdav -> Settings ->
-# Trusted publishing -> GitHub Actions, owner LUgABeEEE, repository
-# minas-webdav, workflow release-dsh.yml. No token is stored anywhere.
 #
-# Release: git tag -a dsh-v0.1.0 -m "dsh-minas-webdav 0.1.0" && git push --follow-tags
+# IMPORTANT: npm cannot bootstrap a brand-new package with OIDC - the trusted
+# publisher is configured on the package's own settings page, which only exists
+# after the first version is on the registry. Bootstrap once with a token:
+#
+#   cd dsh && npm publish --access public   # NPM_TOKEN in env, never committed
+#
+# Then add the trusted publisher on
+#   https://www.npmjs.com/package/dsh-minas-webdav/access
+# GitHub Actions / owner LUgABeEEE / repository minas-webdav /
+# workflow release-dsh.yml, and set the repository variable
+# NPM_TRUSTED_PUBLISHING=true. From then on a dsh-v* tag publishes without a token.
+#
+# Release: git tag -a dsh-v0.1.1 -m "dsh-minas-webdav 0.1.1" && git push --follow-tags
 
 on:
   push:
@@ -19,6 +28,7 @@ permissions:
 jobs:
   publish:
     name: npm publish (OIDC)
+    if: vars.NPM_TRUSTED_PUBLISHING == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
