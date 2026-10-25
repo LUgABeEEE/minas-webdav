@@ -1,6 +1,6 @@
 {
   "name": "dsh-minas-webdav",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Xiaomi Smart Storage (MINAS) NAS file tools for DeepSeek Harness: registers the minas-webdav MCP server (14 nas_* tools) as a bundle. 小米 NAS 的 WebDAV 文件工具，注册 minas-webdav MCP。",
   "type": "module",
   "license": "Apache-2.0",
