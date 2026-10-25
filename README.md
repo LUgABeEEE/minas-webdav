@@ -10,6 +10,16 @@
 | `python -m minas_webdav probe` | 协议能力探测：读写全链路 + 认证 + 锁 |
 | `python -m minas_webdav proxy` | 本机反向代理（`127.0.0.1:8899`），供 Windows `net use` 挂 N 盘 |
 
+## 安装
+
+```bash
+pipx install minas-webdav            # CLI（推荐）
+pip install "minas-webdav[mcp]"      # 需要 MCP server 时加 extra
+```
+
+要求 Python ≥ 3.10。除 `[mcp]` extra 外**无第三方依赖**（只用标准库）。
+不装也可以：`PYTHONPATH=. python3 -m minas_webdav --help`。
+
 ## 前置条件
 
 配套环境、设备版本与兼容性说明见 **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)**（Windows 11 / Python 3.10+ / 小米智能存储官方客户端 1.0.8.170 / `mcp` 2.x；NAS 服务面：nginx/1.24.0 + DAV:1,2）。

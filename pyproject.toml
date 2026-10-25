@@ -5,6 +5,23 @@ description = "Xiaomi Smart Storage (MINAS) WebDAV control toolkit: CLI, probe, 
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 readme = "README.md"
+authors = [{ name = "LUgABeEEE" }]
+keywords = ["xiaomi", "minas", "webdav", "nas", "mcp", "cli", "agent"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Environment :: Console",
+  "Operating System :: OS Independent",
+  "Topic :: System :: Filesystems",
+  "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/LUgABeEEE/minas-webdav"
+Documentation = "https://github.com/LUgABeEEE/minas-webdav#readme"
+Source = "https://github.com/LUgABeEEE/minas-webdav"
+Issues = "https://github.com/LUgABeEEE/minas-webdav/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2,<3"]
