@@ -1,0 +1,13 @@
+.git
+**/__pycache__
+*.pyc
+dist/
+build/
+*.egg-info/
+.github/
+docs/
+scripts/
+skill/
+tests/
+demo*
+*.bak*
