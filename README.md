@@ -1,5 +1,7 @@
 # minas-webdav
 
+[![PyPI](https://img.shields.io/pypi/v/minas-webdav.svg)](https://pypi.org/project/minas-webdav/) [![CI](https://github.com/LUgABeEEE/minas-webdav/actions/workflows/ci.yml/badge.svg)](https://github.com/LUgABeEEE/minas-webdav/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 小米智能存储（Xiaomi Smart Storage / MINAS）**WebDAV 控制工具箱**——不挂盘、不依赖 Samba，直接通过设备的 HTTPS WebDAV 端点（`:5000`）控制整个 `/pool0/data` 存储池。
 
 三条能力线：

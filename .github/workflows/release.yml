@@ -36,6 +36,10 @@ jobs:
   publish:
     name: publish to PyPI
     needs: build
+    # Set the repository variable PYPI_TRUSTED_PUBLISHING=true once the pending
+    # publisher exists on PyPI. Until then a tag still builds and creates the
+    # GitHub release, it just does not touch PyPI.
+    if: vars.PYPI_TRUSTED_PUBLISHING == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -49,7 +53,8 @@ jobs:
 
   github-release:
     name: attach artifacts to the GitHub release
-    needs: publish
+    needs: [build, publish]
+    if: always() && needs.build.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
