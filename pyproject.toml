@@ -1,6 +1,6 @@
 [project]
 name = "minas-webdav"
-version = "0.1.1"
+version = "0.1.2"
 description = "Xiaomi Smart Storage (MINAS) WebDAV control toolkit: CLI, probe, local proxy"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -30,6 +30,7 @@ mcp = ["mcp>=2,<3"]
 minas-webdav = "minas_webdav.cli:main"
 minas-webdav-proxy = "minas_webdav.proxy:run"
 minas-webdav-probe = "minas_webdav.probe:run"
+minas-webdav-mcp = "minas_webdav.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=61"]

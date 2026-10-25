@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## [0.1.2] - 2026-10-25
+
+### Added
+
+- Console script `minas-webdav-mcp` (MCP stdio server entry point), so MCP
+  clients and connector catalogs can start the server by name instead of
+  spelling out `python -m minas_webdav.mcp_server`.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added
