@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tests/test_safe_put.py`: offline tests pinning the temp-name/`MOVE`/verify
   contract, the `DELETE`+`PUT` fallback and the failure modes.
 
+### Added
+
+- `scripts/minas-cert-refresh.sh`: a Linux-only helper for the mTLS certificate
+  this device requires (~21 days, issued only by the official client). It reads
+  a staging directory, validates the bundle against its `manifest.json`
+  (sha256, no path traversal), installs the triple as `0600` with backups,
+  **verifies against the live device**, and only then removes the bundle.
+  It ships no notification backend — `MINAS_NOTIFY_CMD` is the hook. Exit codes
+  `0/10/11/12` map to healthy / expiring / expired / refresh failed.
+- `docs/CERT-REFRESH.md`: the producer contract (bundle layout + manifest),
+  configuration reference, a systemd `service` + `timer` example and a
+  troubleshooting table.
+
 ### Fixed
 
 - `%VAR%` placeholders are expanded on POSIX too: `os.path.expandvars` only
