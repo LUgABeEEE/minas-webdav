@@ -232,4 +232,4 @@ Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
 ## 相关
 
 - 挂 N 盘可选 [rclone](https://rclone.com)（官方下载；仓库不打包二进制）
-- Samba 通道（仅 Z: 备份共享）是另一套：[`minas-skill`](https://github.com/missfor100/minas-skill)（SMB 445）
+- Samba 通道（仅 Z: 备份共享）是另一套：[`minas-skill`](https://github.com/LUgABeEEE/minas-skill)（SMB 445）

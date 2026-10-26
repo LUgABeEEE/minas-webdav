@@ -17,7 +17,7 @@ Thanks for helping improve the Xiaomi Smart Storage (MINAS) WebDAV toolkit.
 ## Development setup
 
 ```powershell
-git clone https://github.com/missfor100/minas-webdav.git
+git clone https://github.com/LUgABeEEE/minas-webdav.git
 cd minas-webdav
 python -m venv .venv
 .\.venv\Scripts\pip install -e ".[mcp,dev]"
