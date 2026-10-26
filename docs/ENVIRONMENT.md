@@ -8,19 +8,31 @@
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| 操作系统 | Windows 11（build 22631） | CLI/probe/proxy 跨平台；`scripts/挂载NAS为N盘.*` 为 Windows 专用 |
-| Python | **3.12.13**（要求 ≥3.10） | CLI/探测/代理仅用标准库，**零第三方依赖** |
+| 操作系统（Windows） | Windows 11（build 22631） | `scripts/挂载NAS为N盘.*` / `删除N盘文件.ps1` 为 Windows 专用 |
+| 操作系统（Linux） | Ubuntu 24.04（SER8） | CLI/probe/proxy 纯标准库，Linux 实测可用；**无需挂盘** |
+| Python | **3.12.13**（Windows）/ **3.12.3**（Linux）；要求 ≥3.10 | CLI/探测/代理仅用标准库，**零第三方依赖** |
 | MCP 依赖 | `mcp==2.2.0`（2.x） | 仅 MCP server 需要；装在项目 `.venv`，勿污染系统 Python |
-| 官方客户端 | **小米智能存储 1.0.8.170**（Windows / Electron） | 产生 mTLS 证书与 WebDAV 凭据的唯一来源 |
-| 证书目录 | `%LOCALAPPDATA%\minasCert\` | cert / private_key / ca_chain，客户端登录时生成 |
-| 凭据文件 | `%LOCALAPPDATA%\minasCred\credentials.env` | `MINAS_USER` / `MINAS_PASS`，仓库外 |
+| 官方客户端 | **小米智能存储 1.0.8.170**（Windows / Electron） | 产生 mTLS 证书与 WebDAV 凭据的唯一来源；**Linux 无客户端** |
+| 证书目录 | Windows `%LOCALAPPDATA%\minasCert\`；Linux `$DSH_HOME/minasCert/`（未设 `DSH_HOME` 则 `~/.dsh/minasCert/`） | cert / private_key / ca_chain，**三者必须同目录**；可用 `MINAS_CERT_HOME` 覆盖 |
+| 凭据文件 | Windows `%LOCALAPPDATA%\minasCred\credentials.env`；Linux `$DSH_HOME/minasCred/credentials.env`（同上回退） | `MINAS_USER` / `MINAS_PASS`，仓库外；可用 `MINAS_CRED_FILE` 覆盖 |
 | 网络 | 与 NAS 同一局域网 | 需可达 `:5000`（WebDAV）与 `:443`（LuCI API，`df`/自动发现用） |
+
+> **Linux 部署方式**：从 Windows 机器把证书三件套复制过来（例如 `~/.dsh/minasCert/`），
+> 凭据写成 `~/.dsh/minasCred/credentials.env`（权限 600），然后运行
+> `python3 -m minas_webdav probe`（路径默认值已按平台自动选择，通常无需显式设置环境变量）。
 
 安装 Python 依赖（仅 MCP）：
 
 ```powershell
+# Windows
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install "mcp>=2,<3"
+```
+
+```sh
+# Linux / macOS
+python3 -m venv .venv
+.venv/bin/python -m pip install "mcp>=2,<3"
 ```
 
 ## 2. NAS 设备侧（实测）

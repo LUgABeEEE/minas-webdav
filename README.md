@@ -10,7 +10,7 @@
 |---|---|
 | `python -m minas_webdav <cmd>` | 文件 CLI：列目录、统计、上传下载、移动复制、删除 |
 | `python -m minas_webdav probe` | 协议能力探测：读写全链路 + 认证 + 锁 |
-| `python -m minas_webdav proxy` | 本机反向代理（`127.0.0.1:8899`），供 Windows `net use` 挂 N 盘 |
+| `python -m minas_webdav proxy` | 本机反向代理（`127.0.0.1:8899`），供 Windows `net use` / Linux `davfs2` 挂盘 |
 
 ## 安装
 
@@ -24,16 +24,25 @@ pip install "minas-webdav[mcp]"      # 需要 MCP server 时加 extra
 
 ## 前置条件
 
-配套环境、设备版本与兼容性说明见 **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)**（Windows 11 / Python 3.10+ / 小米智能存储官方客户端 1.0.8.170 / `mcp` 2.x；NAS 服务面：nginx/1.24.0 + DAV:1,2）。
+配套环境、设备版本与兼容性说明见 **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)**（Windows 11 与 Linux 均实测；Python 3.10+ / 小米智能存储官方客户端 1.0.8.170 / `mcp` 2.x；NAS 服务面：nginx/1.24.0 + DAV:1,2）。
 
 1. NAS 与本机同一局域网（默认 `192.168.1.100:5000`）
-2. 官方客户端已登录过（证书在 `%LOCALAPPDATA%\minasCert\`）
-3. 凭据文件在**仓库外**：`%LOCALAPPDATA%\minasCred\credentials.env`
+2. 官方客户端已登录过，拿到 mTLS 证书三件套（`*_cert.pem` / `*_private_key.pem` / `ca_chain.pem`，**必须同目录**）
+3. 凭据文件在**仓库外**
+
+证书目录与凭据文件的默认位置**按平台自动选择**（可用 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖）：
+
+| | Windows | Linux / macOS |
+|---|---|---|
+| 证书目录 | `%LOCALAPPDATA%\minasCert\` | `$DSH_HOME/minasCert/`（未设则 `~/.dsh/minasCert/`） |
+| 凭据文件 | `%LOCALAPPDATA%\minasCred\credentials.env` | `$DSH_HOME/minasCred/credentials.env`（同上回退） |
 
 ```text
 MINAS_USER=...
 MINAS_PASS=...
 ```
+
+> Linux 上没有官方客户端，需把证书三件套从 Windows 机器复制过来再用 `cert_home` 指过去。
 
 4. 非机密配置：复制 `minas_webdav/minas_config.example.json` 为
    `minas_webdav/minas_config.json`（已 gitignore），填入真实 `host` / `cn`
@@ -66,12 +75,40 @@ python -m minas_webdav proxy
 
 也可 `pip install -e .` 后直接用 `minas-webdav` / `minas-webdav-proxy` / `minas-webdav-probe` 命令。
 
-### 挂 N 盘（可选）
+### Linux / macOS
+
+CLI 只依赖标准库，**无需安装**——只要在仓库根目录下运行即可：
+
+```sh
+cd /path/to/minas-webdav
+python3 -m minas_webdav ls /pool0/data --json
+python3 -m minas_webdav probe
+```
+
+嫌切目录麻烦就用仓库自带的包装脚本（自动切目录 + 选解释器）：
+
+```sh
+scripts/minas-webdav ls /pool0/data --json
+MIMO_PYTHON=/usr/bin/python3 scripts/minas-webdav df
+```
+
+### 挂盘（可选）
+
+Windows（映射为 N 盘）：
 
 ```powershell
 .\scripts\挂载NAS为N盘.ps1     # 自动拉起代理 + net use N:
 .\scripts\删除N盘文件.ps1 <路径> # 删掉资源管理器删不动的文件
 ```
+
+Linux（需要 `davfs2`，仓库不负责安装）：
+
+```sh
+python3 -m minas_webdav proxy &          # 127.0.0.1:8899
+sudo mount -t davfs http://127.0.0.1:8899/ /mnt/nas-n
+```
+
+不挂盘不影响任何 CLI/MCP 功能。
 
 ## 命令一览
 
@@ -88,12 +125,12 @@ python -m minas_webdav proxy
 
 ```text
 minas_webdav/
-  config.py    # 配置与凭据加载（minas_config.json + credentials.env）
+  config.py    # 配置与凭据加载（跨平台默认路径 + minas_config.json + credentials.env）
   cli.py       # 文件 CLI
   probe.py     # 能力探测
-  proxy.py     # 本机反向代理（WebClient 兼容调优）
-scripts/       # 挂 N 盘 / 清理脚本 + rclone.zip
-docs/          # webdav-surface.md 协议实测结论
+  proxy.py     # 本机反向代理（平台中立；Windows 给 net use，Linux 给 davfs2）
+scripts/       # 包装脚本（POSIX `minas-webdav`）+ 挂盘/清理脚本（Windows .ps1）
+docs/          # ENVIRONMENT.md / webdav-surface.md 实测结论
 ```
 
 ## 协议要点（详见 [docs/webdav-surface.md](docs/webdav-surface.md)）
@@ -102,6 +139,34 @@ docs/          # webdav-surface.md 协议实测结论
 - `PROPFIND Depth: infinity` 被拒（403），递归必须逐层 `Depth: 1`
 - `MOVE`/`COPY` 的 `Destination` 用**百分号编码的纯路径**；IP 形式的 URL 会 400
 - 无认证访问返回 451；Basic 即可，mTLS 可选
+
+## 已知问题：PUT 覆盖已存在的文件**不截断**（2026-10-15 定位并规避）
+
+设备的 WebDAV 在覆盖一个**已存在**的资源时**不做截断**：新内容从偏移 0 写进去，旧文件
+的尾巴原样留着。于是文件变成「新内容 + 旧尾巴」的混合体，服务端报告的长度仍是**旧长度**，
+而 PUT 照样返回 **204**——调用方以为写成功了。
+
+实测（**与文件大小无关**，只要新内容比旧内容**短哪怕 1 字节**就触发）：
+
+| 场景 | PUT | 服务端报告 size | 回读内容 |
+|---|---|---|---|
+| 24 MB 覆盖成 2 MB | 204 | 25165824（旧值） | 新头 + 旧尾，sha256 既非新版也非旧版 |
+| 6 MB 覆盖成 6 MB−1 | 204 | 6291456（旧值） | 同上 |
+| 同尺寸覆盖 / 由小变大 / 新建 | 204 | 正确 | 正确 |
+
+这解释了历史上「大文件覆盖后内容还是旧的、但 stat 的 modified 更新了」的怪现象
+（待办 t-f0df70f0）。**当时的应急办法（先 `mv` 改名再用原名上传）之所以有效，是因为
+改名后目标是新名字，不存在旧尾巴。**
+
+**已内置规避**：`cli.safe_put()` 从不直接 PUT 到已存在的名字——先 PUT 到同目录的
+临时名（`.minas-uploading` 后缀，全新创建），再 `MOVE` 覆盖到目标名；MOVE 不可用时
+退回 `DELETE` + `PUT`。写完**回读核对**：长度必须一致（长度不符正是这个 bug 的形状），
+默认再用 sha256 核一遍。核对不过就返回失败，绝不静默成功。CLI 的 `put` 与 MCP 的
+`nas_put` 都已走这条路。
+
+> 直接用别的客户端（资源管理器挂盘、`curl -T`、其他库）往设备同一路径覆盖**更短**的内容
+> 时，仍然会踩到这个问题——WebDAV 侧只有本仓库的工具做了规避。降级开关：
+> `MINAS_PUT_VERIFY=size`（省掉回读下载）或 `off`（只做长度核对的前一步，不建议）。
 
 ## 安全约束
 
@@ -115,16 +180,26 @@ docs/          # webdav-surface.md 协议实测结论
 
 | 方式 | 位置 | 说明 |
 |---|---|---|
-| **Skill** | 仓库 `skill/` → 拷到 `~/.config/mimocode/skills/minas-webdav/` | SKILL.md 触发 + 调本 CLI；全局可用 |
-| **MCP** | `mcp_server.py` + `mimocode.jsonc` 注册 `minas-webdav` | 14 个 `nas_*` 工具（stdio）；`nas_rm` 递归必须 `confirm=true` |
+| **Skill** | 仓库 `skill/` → 拷到 `~/.dsh/skills/minas-webdav/`（DSH）或 `~/.config/mimocode/skills/minas-webdav/`（MiMoCode） | SKILL.md 触发 + 调本 CLI；全局可用 |
+| **MCP** | `mcp_server.py` + 宿主注册 `minas-webdav` | 14 个 `nas_*` 工具（stdio）；`nas_rm` 递归必须 `confirm=true` |
 
-安装 Skill（MiMoCode）：
+### 装 Skill
+
+把仓库 `skill/` 下的内容拷成技能目录即可，**目录名必须等于 SKILL.md 里的 `name`**：
+
+```sh
+# DSH（SER8 上跑的就是这个）
+cp -r skill/. ~/.dsh/skills/minas-webdav/
+```
 
 ```powershell
+# MiMoCode（Windows 常用）
 Copy-Item -Recurse skill "$HOME\.config\mimocode\skills\minas-webdav"
 ```
 
-注册 MCP（任意 MCP 客户端，stdio）：
+### 注册 MCP
+
+任意 MCP 客户端都走 stdio，先让 `minas-webdav-mcp` 可执行：
 
 ```bash
 pipx install 'minas-webdav[mcp]'   # 提供 minas-webdav-mcp
@@ -162,7 +237,7 @@ dsh plugin add dsh-minas-webdav
 
 装完可用 `dsh plugin` 的补丁关掉它（`- id: mcp-minas-webdav` + `disabled: true`）。
 
-证书与凭据只放本机（默认 `~/.dsh/minasCert`、`~/.dsh/minasCred/credentials.env`，可用
+证书与凭据只放本机（默认位置按平台推导，见[前置条件](#前置条件)的对照表；可用
 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖），MCP 配置里不出现任何凭据。
 
 <details>
@@ -171,43 +246,41 @@ dsh plugin add dsh-minas-webdav
 用仓库自带启动器，确保拿到带 `mcp` 依赖的解释器（避免宿主误用无 `mcp` 的 Python）：
 
 ```jsonc
+// Windows
 "minas-webdav": {
   "type": "local",
-  "command": [
-    "cmd", "/c",
-    "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav\\scripts\\launch-mcp.cmd"
-  ],
+  "command": ["cmd", "/c", "<仓库路径>\\scripts\\launch-mcp.cmd"],
   "environment": {},
   "enabled": true
 }
 ```
 
-或直接指向 venv Python：
+也可以直接指向解释器 + `PYTHONPATH`（Windows 写 `.venv\\Scripts\\python.exe`，Linux 写 `.venv/bin/python` 或 `/usr/bin/python3`）：
 
 ```jsonc
 "minas-webdav": {
   "type": "local",
-  "command": [
-    "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav\\.venv\\Scripts\\python.exe",
-    "-m", "minas_webdav.mcp_server"
-  ],
-  "environment": {
-    "PYTHONPATH": "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav"
-  },
+  "command": ["<python>", "-m", "minas_webdav.mcp_server"],
+  "environment": { "PYTHONPATH": "<本仓库路径>" },
   "enabled": true
 }
 ```
 
 </details>
 
+MCP 依赖装在项目 venv（`pip install "mcp>=2,<3"`，2.x）；Linux 下 venv 解释器在 `.venv/bin/python`，Windows 在 `.venv\Scripts\python.exe`。改 CLI 后请同步更新 SKILL.md 命令表与 MCP 工具签名。
+
 ## 测试
 
 ```powershell
-# 离线单测（路径安全 / WebDAV XML 解析，不触网）
+# Windows：离线单测（路径安全 / WebDAV XML 解析，不触网）
 .venv\Scripts\python.exe -m pytest tests/ -q
 ```
 
-改 CLI 后请同步更新 SKILL.md 命令表与 MCP 工具签名。
+```sh
+# Linux / macOS
+python3 -m pytest tests/ -q
+```
 
 ## License
 
