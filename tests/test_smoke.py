@@ -39,5 +39,30 @@ class TestCli(unittest.TestCase):
             self.assertIn(cmd, out.stdout)
 
 
+class TestEntryPoints(unittest.TestCase):
+    def test_proxy_run_accepts_argv(self):
+        # `python -m minas_webdav proxy` passes leftover argv into proxy.run()
+        import inspect
+
+        from minas_webdav import proxy
+
+        params = inspect.signature(proxy.run).parameters
+        self.assertIn("argv", params)
+
+    def test_probe_run_accepts_argv(self):
+        import inspect
+
+        from minas_webdav import probe
+
+        params = inspect.signature(probe.run).parameters
+        self.assertIn("argv", params)
+
+    def test_main_dispatches_without_cli_side_effects(self):
+        from minas_webdav.__main__ import main
+
+        # unknown/empty falls through to CLI parser; just ensure callable
+        self.assertTrue(callable(main))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -127,7 +127,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_UNLOCK(self): self._proxy("UNLOCK")
 
 
-def run() -> int:
+def run(argv: list[str] | None = None) -> int:
+    # argv accepted for `python -m minas_webdav proxy` symmetry; currently unused
+    _ = argv
     _init()
     httpd = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
     httpd.daemon_threads = True

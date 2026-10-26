@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-26
+
+### Fixed
+
+- `python -m minas_webdav proxy` crashed with
+  `TypeError: run() takes 0 positional arguments but 1 was given`
+  (the `__main__` dispatcher passed leftover argv). `proxy.run()` now
+  accepts an optional `argv`, matching `probe.run()`. Console script
+  `minas-webdav-proxy` was unaffected.
+
+### Added
+
+- Smoke tests covering `proxy.run` / `probe.run` entry-point signatures.
+
+### Verified
+
+- Post-firmware-update live check on Xiaomi Smart Storage (2026-10-26):
+  WebDAV protocol surface unchanged (`DAV: 1,2`, Basic auth, Depth:infinity
+  still 403); CLI / MCP `nas_*` / SMB `minas-skill` / Chinese paths /
+  local proxy all healthy.
+
 ## [0.1.3] - 2026-10-26
 
 ### Fixed
@@ -74,7 +95,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.0...v0.1.1
