@@ -236,21 +236,32 @@ class MinasWebDAV:
         return bool(items) and items[0]["is_dir"]
 
 
+def _split_responses(text: str) -> list[str]:
+    """Split a multistatus body on <xxx:response> regardless of namespace prefix."""
+    return re.split(r"<(?:[A-Za-z0-9_]+:)?response(?:\s[^>]*)?>", text)[1:]
+
+
+def _tag_text(block: str, local: str) -> str | None:
+    m = re.search(rf"<(?:[A-Za-z0-9_]+:)?{local}(?:\s[^>]*)?>(.*?)</(?:[A-Za-z0-9_]+:)?{local}>", block, re.S)
+    return m.group(1) if m else None
+
+
 def parse_multistatus(text: str, self_prefix: str = "") -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for block in text.split("<D:response>")[1:]:
-        href_m = re.search(r"<D:href>(.*?)</D:href>", block)
-        if not href_m:
+    blocks = _split_responses(text)
+    for block in blocks:
+        href_raw = _tag_text(block, "href")
+        if href_raw is None:
             continue
-        href = urllib.parse.unquote(href_m.group(1))
-        name_m = re.search(r"<D:displayname>(.*?)</D:displayname>", block)
-        size_m = re.search(r"<D:getcontentlength>(.*?)</D:getcontentlength>", block)
-        mod_m = re.search(r"<D:getlastmodified>(.*?)</D:getlastmodified>", block)
-        is_dir = "<D:collection/>" in block
-        name = urllib.parse.unquote(name_m.group(1)) if name_m else href.rstrip("/").split("/")[-1]
-        size = int(size_m.group(1)) if size_m and size_m.group(1).isdigit() else 0
+        href = urllib.parse.unquote(href_raw)
+        name_raw = _tag_text(block, "displayname")
+        size_raw = _tag_text(block, "getcontentlength")
+        mod_raw = _tag_text(block, "getlastmodified")
+        is_dir = bool(re.search(r"<(?:[A-Za-z0-9_]+:)?collection(?:\s*/|>)", block))
+        name = urllib.parse.unquote(name_raw) if name_raw else href.rstrip("/").split("/")[-1]
+        size = int(size_raw) if size_raw and size_raw.isdigit() else 0
         # skip self entry when depth>0 includes it
-        if self_prefix and href.rstrip("/") == self_prefix.rstrip("/") and len(text.split("<D:response>")) > 2:
+        if self_prefix and href.rstrip("/") == self_prefix.rstrip("/") and len(blocks) > 1:
             # keep only if sole entry (depth 0)
             continue
         items.append(
@@ -259,7 +270,7 @@ def parse_multistatus(text: str, self_prefix: str = "") -> list[dict[str, Any]]:
                 "name": name,
                 "size": size,
                 "is_dir": is_dir,
-                "modified": mod_m.group(1) if mod_m else "",
+                "modified": mod_raw or "",
             }
         )
     # depth=0 often returns exactly one self item — keep it
@@ -270,19 +281,19 @@ def parse_multistatus(text: str, self_prefix: str = "") -> list[dict[str, Any]]:
 
 def parse_multistatus_self(text: str) -> list[dict[str, Any]]:
     out = []
-    for block in text.split("<D:response>")[1:]:
-        href_m = re.search(r"<D:href>(.*?)</D:href>", block)
-        if not href_m:
+    for block in _split_responses(text):
+        href_raw = _tag_text(block, "href")
+        if href_raw is None:
             continue
-        href = urllib.parse.unquote(href_m.group(1))
-        name_m = re.search(r"<D:displayname>(.*?)</D:displayname>", block)
-        is_dir = "<D:collection/>" in block
-        size_m = re.search(r"<D:getcontentlength>(.*?)</D:getcontentlength>", block)
+        href = urllib.parse.unquote(href_raw)
+        name_raw = _tag_text(block, "displayname")
+        is_dir = bool(re.search(r"<(?:[A-Za-z0-9_]+:)?collection(?:\s*/|>)", block))
+        size_raw = _tag_text(block, "getcontentlength")
         out.append(
             {
                 "path": href,
-                "name": urllib.parse.unquote(name_m.group(1)) if name_m else href,
-                "size": int(size_m.group(1)) if size_m and size_m.group(1).isdigit() else 0,
+                "name": urllib.parse.unquote(name_raw) if name_raw else href,
+                "size": int(size_raw) if size_raw and size_raw.isdigit() else 0,
                 "is_dir": is_dir,
                 "modified": "",
             }
@@ -300,15 +311,28 @@ def fmt_size(n: float) -> str:
 
 
 def ensure_data_path(path: str) -> str:
+    """Normalize a user path to an absolute path under DATA_ROOT.
+
+    Rejects ``..`` escapes and sibling prefixes like ``/pool0evil``.
+    Bare names are treated as relative to DATA_ROOT.
+    """
     p = norm(path)
     if p in ("", "/"):
         return DATA_ROOT
-    if not p.startswith("/pool0"):
-        # allow bare names relative to data root
+    if ".." in p.split("/"):
+        raise ValueError("path must stay under the data root (no '..')")
+    root = norm(DATA_ROOT)
+    # bare /name or name → under DATA_ROOT
+    if p != root and not p.startswith(root + "/") and not p.startswith("/pool0/"):
         if not p.startswith("/"):
             p = "/" + p
-        if not p.startswith("/pool0"):
-            p = DATA_ROOT.rstrip("/") + p
+        p = root.rstrip("/") + p
+        p = norm(p)
+        if ".." in p.split("/"):
+            raise ValueError("path must stay under the data root (no '..')")
+    # absolute paths must stay inside DATA_ROOT (not just /pool0*)
+    if p != root and not p.startswith(root + "/"):
+        raise ValueError(f"path outside data root ({root}): {path}")
     return p
 
 
@@ -546,7 +570,7 @@ def cmd_rm(client: MinasWebDAV, args: argparse.Namespace) -> int:
     return 1
 
 
-def dest_header(dest_path: str, client: MinasWebDAV) -> str:
+def dest_header(dest_path: str) -> str:
     # path-only works (IP-in-URL → 400); must be percent-encoded — header
     # values are latin-1 to http.client and raw CJK would raise.
     return enc_path(norm(dest_path))
@@ -558,7 +582,7 @@ def cmd_mv(client: MinasWebDAV, args: argparse.Namespace) -> int:
     status, _, body = client.request(
         "MOVE",
         src,
-        headers={"Destination": dest_header(dst, client), "Overwrite": "T" if args.force else "F"},
+        headers={"Destination": dest_header(dst), "Overwrite": "T" if args.force else "F"},
         with_mtls=True,
     )
     if status in (200, 201, 204):
@@ -574,7 +598,7 @@ def cmd_cp(client: MinasWebDAV, args: argparse.Namespace) -> int:
     status, _, body = client.request(
         "COPY",
         src,
-        headers={"Destination": dest_header(dst, client), "Overwrite": "T" if args.force else "F"},
+        headers={"Destination": dest_header(dst), "Overwrite": "T" if args.force else "F"},
         with_mtls=True,
     )
     if status in (200, 201, 204):

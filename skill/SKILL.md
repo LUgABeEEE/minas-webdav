@@ -26,14 +26,18 @@ description: 小米 NAS / 小米智能存储（MINAS）的 WebDAV 文件操作�
 
 ## 调用方式（必须遵守）
 
-CLI 位于 `F:\Projects\minas-webdav`。**所有命令以该目录为工作目录**：
+CLI 位于仓库根目录（本机默认 `F:\BaiduNetdiskDownload\Projects\minas-webdav`）。
+用环境变量 `MINAS_WEBDAV_HOME` 指向仓库根；未设置时用下面的默认路径。
+**所有命令以该目录为工作目录**：
 
 ```powershell
-Set-Location F:\Projects\minas-webdav
+$home = $env:MINAS_WEBDAV_HOME
+if (-not $home) { $home = "F:\BaiduNetdiskDownload\Projects\minas-webdav" }
+Set-Location $home
 & $env:MIMO_PYTHON -m minas_webdav <命令> [参数]
 ```
 
-（`$env:MIMO_PYTHON` 为空时用 `python`。）
+（`$env:MIMO_PYTHON` 为空时用仓库 `.venv\Scripts\python.exe`，再退回 `python`。）
 
 ## 命令表
 

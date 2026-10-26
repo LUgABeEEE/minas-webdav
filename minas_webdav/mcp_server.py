@@ -33,6 +33,7 @@ from .cli import (  # noqa: E402
 mcp = MCPServer("minas-webdav")
 
 MAX_PUT_BYTES = 32 * 1024 * 1024
+MAX_GET_BYTES = 32 * 1024 * 1024
 MAX_CAT_BYTES = 64 * 1024
 
 
@@ -150,7 +151,7 @@ def nas_find(
                 return
             for it in _list_dir(_client(), cur):
                 ok = True
-                if name_re and not name_re.search(it["name"]):
+                if name_re and not name_re.fullmatch(it["name"]):
                     ok = False
                 if files_only and it["is_dir"]:
                     ok = False
@@ -246,16 +247,32 @@ def nas_cat(path: str, max_bytes: int = MAX_CAT_BYTES) -> dict[str, Any]:
 
 @mcp.tool(annotations=WRITE)
 def nas_get(remote: str, local: str) -> dict[str, Any]:
-    """Download one file to a local path. Large files: prefer the CLI. Single call max 32MB body check is best-effort."""
+    """Download one file to a local path. Max 32MB per call; larger files via the CLI."""
     from pathlib import Path
 
     p = _safe_path(remote)
     try:
+        meta = _client().propfind(p, depth="0", with_mtls=True)
+        if not meta:
+            return {"ok": False, "error": f"not found: {p}"}
+        size = int(meta[0].get("size") or 0)
+        if size > MAX_GET_BYTES:
+            return {
+                "ok": False,
+                "error": f"file too large ({size} bytes > {MAX_GET_BYTES})",
+                "hint": "use the CLI: python -m minas_webdav get <remote> <local>",
+            }
         status, _, data = _client().request("GET", p, with_mtls=True)
         if status == 404:
             return {"ok": False, "error": f"not found: {p}"}
         if status not in (200, 206):
             return _fail(RuntimeError(f"GET {p} -> HTTP {status}"))
+        if len(data) > MAX_GET_BYTES:
+            return {
+                "ok": False,
+                "error": f"response too large ({len(data)} bytes > {MAX_GET_BYTES})",
+                "hint": "use the CLI for large files",
+            }
         dest = Path(local)
         if dest.is_dir():
             dest = dest / norm(p).rstrip("/").split("/")[-1]
@@ -314,7 +331,7 @@ def nas_mv(src: str, dst: str, force: bool = False) -> dict[str, Any]:
     try:
         status, _, body = _client().request(
             "MOVE", s,
-            headers={"Destination": dest_header(d, _client()), "Overwrite": "T" if force else "F"},
+            headers={"Destination": dest_header(d), "Overwrite": "T" if force else "F"},
             with_mtls=True,
         )
     except Exception as e:
@@ -331,7 +348,7 @@ def nas_cp(src: str, dst: str, force: bool = False) -> dict[str, Any]:
     try:
         status, _, body = _client().request(
             "COPY", s,
-            headers={"Destination": dest_header(d, _client()), "Overwrite": "T" if force else "F"},
+            headers={"Destination": dest_header(d), "Overwrite": "T" if force else "F"},
             with_mtls=True,
         )
     except Exception as e:

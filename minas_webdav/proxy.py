@@ -90,14 +90,14 @@ class Handler(BaseHTTPRequestHandler):
                 if k.lower() in skip:
                     continue
                 self.send_header(k, v)
-            self.send_header("Content-Length", str(len(data) if status != 200 else 0))
+            # HEAD must not carry a body; Content-Length must match what we write.
+            out = b"" if method == "HEAD" else data
+            self.send_header("Content-Length", str(len(out)))
             self.send_header("Connection", "close")
             self.send_header("MS-Author-Via", "DAV")
             self.end_headers()
-            if method != "HEAD" and status != 200 and data:
-                self.wfile.write(data)
-            elif method != "HEAD" and method not in ("DELETE", "MKCOL", "UNLOCK") and data:
-                self.wfile.write(data)
+            if out:
+                self.wfile.write(out)
         except Exception as e:
             msg = f"{type(e).__name__}: {e}".encode()
             self.close_connection = True

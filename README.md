@@ -165,13 +165,71 @@ dsh plugin add dsh-minas-webdav
 证书与凭据只放本机（默认 `~/.dsh/minasCert`、`~/.dsh/minasCred/credentials.env`，可用
 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖），MCP 配置里不出现任何凭据。
 
+<details>
+<summary>从本仓库源码启动（MiMo Desktop / 本地 venv）</summary>
+
+用仓库自带启动器，确保拿到带 `mcp` 依赖的解释器（避免宿主误用无 `mcp` 的 Python）：
+
+```jsonc
+"minas-webdav": {
+  "type": "local",
+  "command": [
+    "cmd", "/c",
+    "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav\\scripts\\launch-mcp.cmd"
+  ],
+  "environment": {},
+  "enabled": true
+}
+```
+
+或直接指向 venv Python：
+
+```jsonc
+"minas-webdav": {
+  "type": "local",
+  "command": [
+    "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav\\.venv\\Scripts\\python.exe",
+    "-m", "minas_webdav.mcp_server"
+  ],
+  "environment": {
+    "PYTHONPATH": "F:\\BaiduNetdiskDownload\\Projects\\minas-webdav"
+  },
+  "enabled": true
+}
+```
+
+</details>
+
+## 测试
+
+```powershell
+# 离线单测（路径安全 / WebDAV XML 解析，不触网）
+.venv\Scripts\python.exe -m pytest tests/ -q
+```
+
 改 CLI 后请同步更新 SKILL.md 命令表与 MCP 工具签名。
 
 ## License
 
-Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。与 Xiaomi 无关联。
+Apache-2.0，见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
+
+**声明**
+
+- 本项目是面向小米智能存储（MINAS）的**第三方** WebDAV 工具箱，**不是**小米官方产品，与 Xiaomi 无隶属、赞助或背书关系。
+- Xiaomi、小米智能存储及相关商标归其各自权利人所有；此处仅用于指明兼容目标设备。
+- 软件按“现状”提供，不附带任何明示或默示担保。使用本工具访问你自己的 NAS 的风险自负；请遵守当地法律法规与厂商服务条款。
+- 请勿将本工具用于未授权访问他人存储设备。
+
+**社区**
+
+| 文档 | 说明 |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献流程与开发约定 |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | 社区行为准则 |
+| [SECURITY.md](SECURITY.md) | 安全问题私报渠道 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
 
 ## 相关
 
 - 挂 N 盘可选 [rclone](https://rclone.com)（官方下载；仓库不打包二进制）
-- Samba 通道（仅 Z: 备份共享）是另一套：`minas-skill`（SMB 445）
+- Samba 通道（仅 Z: 备份共享）是另一套：[`minas-skill`](https://github.com/missfor100/minas-skill)（SMB 445）

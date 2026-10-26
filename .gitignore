@@ -12,3 +12,7 @@ minas_webdav/minas_config.json
 # credentials must never be committed
 credentials.env
 *.env
+
+# broken venv snapshot (local only)
+.venv.broken*/
+.pytest_cache/
