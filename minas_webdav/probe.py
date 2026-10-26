@@ -22,25 +22,34 @@ def enc(path: str) -> str:
 
 
 def run(argv: list[str] | None = None) -> int:
+    from .cli import client_ctx, find_certs, resolve_server_cn
+
     cfg = _mconf.apply_env()
-    cn = cfg.get("cn") or os.environ.get("MINAS_CN", "")
     host, port = os.environ["MINAS_IP"], int(os.environ["MINAS_PORT"])
     user, password = os.environ.get("MINAS_USER", ""), os.environ.get("MINAS_PASS", "")
     if not user or not password:
         print("missing credentials (MINAS_USER/MINAS_PASS)", file=sys.stderr)
         return 3
+    # Host/SNI must be the device CN. This used to require an explicit MINAS_CN
+    # and then crash with "server_hostname cannot be an empty string"; probe the
+    # server certificate exactly like the main CLI does.
+    cn = cfg.get("cn") or os.environ.get("MINAS_CN", "")
+    if not cn:
+        try:
+            cn = resolve_server_cn(host, port)
+            os.environ["MINAS_CN"] = cn
+        except Exception as e:
+            print(f"cannot resolve device CN ({type(e).__name__}: {e}); "
+                  "set `cn` in minas_config.json or MINAS_CN", file=sys.stderr)
+            return 3
     token = base64.b64encode(f"{user}:{password}".encode()).decode()
-    cert_home = Path(
-        os.environ.get("MINAS_CERT_HOME")
-        or (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "minasCert")
-    )
-    certs = sorted(cert_home.glob("*_cert.pem"), key=lambda x: x.stat().st_mtime, reverse=True)
+    # Single source of truth for the cert trio (it enforces the <prefix> pairing).
+    certs = find_certs()
     if not certs:
-        print(f"no client certs under {cert_home}; login official client first", file=sys.stderr)
+        print(f"no client certs under {_mconf.default_cert_home()}; login the official "
+              "client first and/or copy the mTLS trio (*_cert.pem, *_private_key.pem, "
+              "ca_chain.pem) there", file=sys.stderr)
         return 3
-    cert = certs[0]
-    key = cert_home / (certs[0].name.replace("_cert.pem", "_private_key.pem"))
-    ca = cert_home / "ca_chain.pem"
 
     def req(method, path, body=None, headers=None, depth=None):
         headers = dict(headers or {})
@@ -49,7 +58,7 @@ def run(argv: list[str] | None = None) -> int:
         headers.setdefault("Connection", "close")
         if depth is not None:
             headers["Depth"] = str(depth)
-        ctx = ssl._create_unverified_context()
+        ctx = client_ctx()   # carries the client cert; a bare context gets HTTP 451
         sock = socket.create_connection((host, port), timeout=20)
         ssock = ctx.wrap_socket(sock, server_hostname=cn)
         conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=20)
@@ -183,7 +192,7 @@ def run(argv: list[str] | None = None) -> int:
             headers = {"Host": cn, "Connection": "close"}
             if use_auth:
                 headers["Authorization"] = "Basic " + token
-            ctx = ssl._create_unverified_context()
+            ctx = client_ctx()   # auth recap must run over the mTLS channel too
             sock = socket.create_connection((host, port), timeout=10)
             ssock = ctx.wrap_socket(sock, server_hostname=cn)
             c = http.client.HTTPSConnection(host, port, context=ctx, timeout=10)

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -37,8 +38,66 @@ _mconf.apply_env()
 
 DEFAULT_NAS_IP = os.environ.get("MINAS_IP", "192.168.1.100")
 DEFAULT_WEBDAV_PORT = int(os.environ.get("MINAS_PORT", "5000"))
-CERT_HOME = Path(os.environ.get("MINAS_CERT_HOME", Path(os.environ.get("LOCALAPPDATA", "")) / "minasCert"))
+# Platform-aware: %LOCALAPPDATA%\minasCert on Windows, $DSH_HOME/minasCert
+# (else ~/.dsh/minasCert) elsewhere. Avoids the old Path("")/"minasCert"
+# relative-path fallback when LOCALAPPDATA was unset.
+CERT_HOME = _mconf.default_cert_home()
 DATA_ROOT = os.environ.get("MINAS_DATA_ROOT", "/pool0/data")
+
+
+def _cn_from_der(der: bytes) -> str:
+    """Subject CN of a DER certificate, cross-platform.
+
+    Tries the ``cryptography`` package, then the ``openssl`` CLI (ubiquitous on
+    POSIX), then ``certutil -dump`` (Windows). Returns "" if none work.
+    """
+    # 1) cryptography (pure-python, no subprocess)
+    try:
+        from cryptography import x509  # type: ignore
+        from cryptography.x509.oid import NameOID  # type: ignore
+
+        attrs = x509.load_der_x509_certificate(der).subject.get_attributes_for_oid(
+            NameOID.COMMON_NAME
+        )
+        if attrs:
+            return str(attrs[0].value).strip()
+    except Exception:
+        pass
+    # 2) openssl CLI
+    try:
+        import subprocess
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("wb", suffix=".der", delete=False) as fh:
+            fh.write(der)
+            path = fh.name
+        try:
+            out = subprocess.run(
+                ["openssl", "x509", "-inform", "DER", "-in", path, "-noout", "-subject"],
+                capture_output=True, text=True, timeout=10,
+            )
+            m = re.search(r"CN\s*=\s*([^,/\n]+)", out.stdout or "")
+            if m:
+                return m.group(1).strip()
+        finally:
+            Path(path).unlink(missing_ok=True)
+    except Exception:
+        pass
+    # 3) certutil -dump (Windows)
+    try:
+        import subprocess
+        import tempfile
+
+        tmp = Path(tempfile.gettempdir()) / "minas_peer.cer"
+        tmp.write_bytes(der)
+        out = subprocess.check_output(["certutil", "-dump", str(tmp)],
+                                      stderr=subprocess.STDOUT)
+        m = re.search(r"CN=([^,\r\n]+)", out.decode("utf-8", "replace"))
+        if m:
+            return m.group(1).strip()
+    except Exception:
+        pass
+    return ""
 
 
 def enc_path(path: str) -> str:
@@ -72,6 +131,33 @@ def find_certs() -> tuple[str, str, str] | None:
     return None
 
 
+def resolve_server_cn(ip: str, port: int) -> str:
+    """CN of the device certificate (used for Host/SNI), probed over TLS.
+
+    Needed by entry points that have no config/env CN — the device rejects a
+    bare IP/hostname.
+    """
+    return MinasWebDAV(ip, port)._resolve_cn()
+
+
+def client_ctx() -> ssl.SSLContext:
+    """TLS context for talking to the device, with mTLS when a cert trio exists.
+
+    The device answers **HTTP 451** to requests that carry no client
+    certificate, so every code path must use this. `probe` and `proxy` used to
+    build a bare unverified context and could therefore never work against a
+    real device.
+    """
+    certs = find_certs()
+    if certs:
+        cert, key, ca = certs
+        ctx = ssl.create_default_context(cafile=ca)
+        ctx.load_cert_chain(certfile=cert, keyfile=key)
+        ctx.check_hostname = False
+        return ctx
+    return _mconf.unverified_ctx()
+
+
 class MinasWebDAV:
     def __init__(self, ip: str = DEFAULT_NAS_IP, port: int = DEFAULT_WEBDAV_PORT):
         self.ip = ip
@@ -91,14 +177,14 @@ class MinasWebDAV:
             ctx.load_cert_chain(certfile=cert, keyfile=key)
             ctx.check_hostname = False
             return ctx
-        ctx = ssl._create_unverified_context()
+        ctx = _mconf.unverified_ctx()
         return ctx
 
     def _resolve_cn(self) -> str:
         if self.server_cn:
             return self.server_cn
         # probe server cert CN
-        ctx = ssl._create_unverified_context()
+        ctx = _mconf.unverified_ctx()
         sock = socket.create_connection((self.ip, 443 if self.port == 5000 else self.port), timeout=8)
         try:
             ssock = ctx.wrap_socket(sock, server_hostname="x")
@@ -111,24 +197,28 @@ class MinasWebDAV:
             ssock = ctx.wrap_socket(sock, server_hostname="x")
             der = ssock.getpeercert(binary_form=True)
             ssock.close()
-        # parse CN via certutil if available
-        import subprocess
-        import tempfile
-        tmp = Path(tempfile.gettempdir()) / "minas_peer.cer"
-        tmp.write_bytes(der)
-        out = subprocess.check_output(["certutil", "-dump", str(tmp)], stderr=subprocess.STDOUT)
-        text = out.decode("utf-8", "replace")
-        m = re.search(r"CN=([^,\r\n]+)", text)
-        if not m:
-            raise RuntimeError("cannot parse server CN from cert")
-        self.server_cn = m.group(1).strip()
+        # Parse the CN out of the DER cert, cross-platform (the old code shelled
+        # out to `certutil`, which only exists on Windows).
+        cn = _cn_from_der(der)
+        if not cn:
+            raise RuntimeError(
+                "cannot parse server CN from cert; set `cn` in minas_config.json "
+                "or MINAS_CN explicitly (needed for Host/SNI — the device rejects "
+                "a bare IP/hostname)"
+            )
+        self.server_cn = cn
         return self.server_cn
 
     def discover(self) -> dict[str, Any]:
         """Fetch pool info via LuCI mTLS API (local tunnel or direct)."""
         certs = find_certs()
         if not certs:
-            raise RuntimeError(f"certs not found under {CERT_HOME}; login official client first")
+            raise RuntimeError(
+                f"certs not found under {CERT_HOME}; login the official client first "
+                f"and/or copy the mTLS trio (*_cert.pem, *_private_key.pem, ca_chain.pem) "
+                f"there, or set MINAS_CERT_HOME / cert_home to where they are. "
+                f"[{_mconf.describe_env()}]"
+            )
         cert, key, ca = certs
         cn = self._resolve_cn()
         ctx = ssl.create_default_context(cafile=ca)
@@ -497,18 +587,12 @@ def cmd_put(client: MinasWebDAV, args: argparse.Namespace) -> int:
         return 1
     remote = ensure_data_path(args.remote)
     data = local.read_bytes()
-    status, _, body = client.request(
-        "PUT",
-        remote,
-        body=data,
-        headers={"Content-Type": "application/octet-stream"},
-        with_mtls=True,
-    )
-    if status in (200, 201, 204):
-        print(f"uploaded {local} -> {remote} ({fmt_size(len(data))})")
-        return 0
-    print(f"PUT failed HTTP {status}: {body[:200]!r}", file=sys.stderr)
-    return 1
+    res = safe_put(client, remote, data)
+    if not res["ok"]:
+        print(f"upload failed: {res['error']}", file=sys.stderr)
+        return 1
+    print(f"uploaded {local} -> {remote} ({fmt_size(len(data))}) verified={res['verified']}")
+    return 0
 
 
 def cmd_cat(client: MinasWebDAV, args: argparse.Namespace) -> int:
@@ -574,6 +658,101 @@ def dest_header(dest_path: str) -> str:
     # path-only works (IP-in-URL → 400); must be percent-encoded — header
     # values are latin-1 to http.client and raw CJK would raise.
     return enc_path(norm(dest_path))
+
+
+# ---------------------------------------------------------------------------
+# 安全覆盖：绕开设备「PUT 不截断」的毛病
+#
+# 实测（2026-10-15，待办 t-f0df70f0）：设备上的 PUT 覆盖一个**已存在**的资源时
+# **不会截断**——新内容从偏移 0 写进去，旧文件的尾巴原样留着，于是文件变成
+# 「新头 + 旧尾」的混合体，服务端报告的长度仍是旧长度，而 PUT 照样回 204。
+# 24MB -> 2MB 得到的是 25165824 字节、sha256 既不是新版也不是旧版的文件；
+# 只要新内容比旧内容**短哪怕 1 字节**就会触发，与文件大小无关。
+#
+# 修法：绝不 PUT 到已存在的名字。先传到同目录的临时名（全新创建，不存在旧尾巴），
+# 再 MOVE 覆盖到目标名（替换是原子的）。MOVE 不可用时退回 DELETE + PUT。
+# 写完必须回读核对长度（长度不符 = 正是这个 bug 的形状），默认再核一次 sha256。
+# ---------------------------------------------------------------------------
+
+# sha | size | off —— 回读核对的强度，可用环境变量降级（大文件嫌慢时）
+PUT_VERIFY = os.environ.get("MINAS_PUT_VERIFY", "sha").strip().lower()
+PUT_TMP_SUFFIX = ".minas-uploading"
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _exists(client: MinasWebDAV, path: str) -> bool:
+    try:
+        return bool(client.propfind(path, depth="0", with_mtls=True))
+    except Exception:  # noqa: BLE001 — 判定失败按「不存在」处理，回读会兜住
+        return False
+
+
+def _put_bytes(client: MinasWebDAV, path: str, data: bytes) -> tuple[int, bytes]:
+    status, _, body = client.request(
+        "PUT", path, body=data,
+        headers={"Content-Type": "application/octet-stream"}, with_mtls=True,
+    )
+    return status, body
+
+
+def _move(client: MinasWebDAV, src: str, dst: str) -> int:
+    status, _, _ = client.request(
+        "MOVE", src,
+        headers={"Destination": dest_header(dst), "Overwrite": "T"},
+        with_mtls=True,
+    )
+    return status
+
+
+def safe_put(client: MinasWebDAV, remote: str, data: bytes,
+             verify: str | None = None) -> dict[str, Any]:
+    """把 data 安全写到 remote，返回 ok / status / size / verified / error。
+
+    从不直接 PUT 到已存在的名字；写完回读核对，不符就 ok=False，绝不静默成功。
+    """
+    verify = (verify or PUT_VERIFY or "sha").lower()
+    remote = norm(remote)
+    tmp = remote + PUT_TMP_SUFFIX
+    client.request("DELETE", tmp, with_mtls=True)  # 清掉上一次可能留下的残片
+
+    status, body = _put_bytes(client, tmp, data)
+    if status not in (200, 201, 204):
+        return {"ok": False, "status": status,
+                "error": f"PUT {tmp} -> HTTP {status}: {body[:160]!r}"}
+
+    target_existed = _exists(client, remote)
+    moved = _move(client, tmp, remote)
+    if moved not in (200, 201, 204):
+        if not target_existed:
+            return {"ok": False, "status": moved,
+                    "error": f"MOVE {tmp} -> {remote} -> HTTP {moved}"}
+        # 退回 DELETE + PUT：删掉旧的之后就是全新创建，不存在留尾巴的前提
+        client.request("DELETE", remote, with_mtls=True)
+        status2, body2 = _put_bytes(client, remote, data)
+        client.request("DELETE", tmp, with_mtls=True)
+        if status2 not in (200, 201, 204):
+            return {"ok": False, "status": status2,
+                    "error": f"PUT {remote} -> HTTP {status2}: {body2[:160]!r}"}
+
+    items = client.propfind(remote, depth="0", with_mtls=True)
+    got_size = items[0].get("size") if items else None
+    if got_size != len(data):
+        return {"ok": False, "status": 204, "size": got_size, "expected": len(data),
+                "error": f"回读长度 {got_size} != 写入 {len(data)}（正是不截断那个 bug 的形状）"}
+
+    if verify == "off":
+        return {"ok": True, "status": 204, "size": got_size, "verified": "none"}
+    if verify == "sha":
+        _, _, back = client.request("GET", remote, with_mtls=True)
+        if _sha256(back) != _sha256(data):
+            return {"ok": False, "status": 204, "size": got_size,
+                    "error": "回读 sha256 与写入内容不一致"}
+        return {"ok": True, "status": 204, "size": got_size,
+                "sha256": _sha256(data), "verified": "size+sha256"}
+    return {"ok": True, "status": 204, "size": got_size, "verified": "size"}
 
 
 def cmd_mv(client: MinasWebDAV, args: argparse.Namespace) -> int:

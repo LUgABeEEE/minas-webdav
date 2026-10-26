@@ -1,8 +1,11 @@
 """MCP server: expose minas-webdav as structured tools over stdio.
 
 Usage:
-  python -m minas_webdav.mcp_server
-  (or .venv\\Scripts\\python.exe with PYTHONPATH=F:\\Projects\\minas-webdav)
+  python -m minas_webdav.mcp_server        # run from the repo/workdir root
+  # Windows venv:  .venv\\Scripts\\python.exe -m minas_webdav.mcp_server
+  # POSIX venv:    .venv/bin/python -m minas_webdav.mcp_server
+
+Requires the optional ``mcp`` extra (``pip install "mcp>=2,<3"``).
 
 Shared core with the CLI (minas_webdav.cli / minas_webdav.config).
 """
@@ -28,6 +31,7 @@ from .cli import (  # noqa: E402
     ensure_data_path,
     fnmatch_to_re,
     norm,
+    safe_put,
 )
 
 mcp = MCPServer("minas-webdav")
@@ -52,7 +56,10 @@ def _hint(err: Exception) -> str:
     msg = str(err)
     low = msg.lower()
     if "cert" in low or "discover" in low or "credential" in low or "451" in msg:
-        return "check %LOCALAPPDATA%\\minasCred\\credentials.env and minasCert (official client login)"
+        return (
+            "check credentials + mTLS certs (official client login). "
+            f"[{_mconf.describe_env()}]"
+        )
     if "423" in msg:
         return "resource is locked (locks linger up to 60s after delete); retry later or use another path"
     if "403" in msg:
@@ -296,15 +303,17 @@ def nas_put(local: str, remote: str) -> dict[str, Any]:
         return {"ok": False, "error": f"file too large ({size} bytes > {MAX_PUT_BYTES})", "hint": "use the CLI for large files"}
     p = _safe_path(remote)
     try:
-        status, _, body = _client().request(
-            "PUT", p, body=src.read_bytes(),
-            headers={"Content-Type": "application/octet-stream"}, with_mtls=True,
-        )
+        # safe_put 而不是裸 PUT：设备对已存在资源的 PUT **不截断**，直接覆盖会把
+        # 旧文件的尾巴留在新内容后面（短 1 字节都会），并照样回 204。
+        # 详见 cli.safe_put 的注释与 README「已知问题」。
+        res = safe_put(_client(), p, src.read_bytes())
     except Exception as e:
         return _fail(e)
-    if status not in (200, 201, 204):
-        return _fail(RuntimeError(f"PUT {p} -> HTTP {status}: {body[:160]!r}"))
-    return _ok(path=p, local=str(src), bytes=size, status=status)
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error"),
+                "hint": "先传临时名再 MOVE 也没成功；见 minas-webdav/README.md 的「已知问题」"}
+    return _ok(path=p, local=str(src), bytes=size, status=res.get("status"),
+               verified=res.get("verified"), sha256=res.get("sha256"))
 
 
 @mcp.tool(annotations=WRITE)

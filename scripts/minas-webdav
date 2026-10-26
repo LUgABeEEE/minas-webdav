@@ -1,0 +1,24 @@
+#!/bin/sh
+# POSIX wrapper for the minas-webdav CLI.
+#
+# Why: the CLI must run with the repository root as the working directory so
+# that the `minas_webdav` package is importable. This wrapper removes that
+# footgun and picks a sane interpreter.
+#
+# Usage:  scripts/minas-webdav <command> [args...]
+# Env:    MIMO_PYTHON / PYTHON  — interpreter to use (default: python3)
+#
+# Exit codes are passed through unchanged (0 ok, 1 error, 2 not found, 3 auth/network).
+set -eu
+
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(dirname -- "$SELF_DIR")
+PY=${MIMO_PYTHON:-${PYTHON:-python3}}
+
+if ! command -v "$PY" >/dev/null 2>&1; then
+    echo "minas-webdav: interpreter '$PY' not found (set MIMO_PYTHON or PYTHON)" >&2
+    exit 1
+fi
+
+cd "$ROOT"
+exec "$PY" -m minas_webdav "$@"
