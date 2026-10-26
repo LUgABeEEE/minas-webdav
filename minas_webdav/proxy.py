@@ -1,6 +1,14 @@
 """Local WebDAV reverse proxy for Xiaomi Smart Storage (MINAS).
 http://127.0.0.1:8899 -> https://<nas>:5000 with Basic auth.
-Tuned for Windows WebClient (net use / Explorer).
+
+The proxy is plain HTTP to a loopback port, so it is platform-neutral; it
+exists because most WebDAV clients cannot do the device's mTLS/CN dance
+themselves.
+
+* Windows — feed it to WebClient (``net use`` / Explorer); see
+  ``scripts/挂载NAS为N盘.ps1``.
+* Linux — feed it to ``davfs2`` (``mount -t davfs http://127.0.0.1:8899/ /mnt/n``)
+  or to any HTTP-speaking client. The CLI/MCP do **not** need the proxy.
 """
 from __future__ import annotations
 
@@ -22,11 +30,13 @@ LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 8899
 UP_CN = ""
 TOKEN = ""
-_ctx = ssl._create_unverified_context()
+_ctx: ssl.SSLContext | None = None
 
 
 def _init() -> None:
-    global UP_HOST, UP_PORT, UP_USER, UP_PASS, LISTEN_HOST, LISTEN_PORT, UP_CN, TOKEN
+    global UP_HOST, UP_PORT, UP_USER, UP_PASS, LISTEN_HOST, LISTEN_PORT, UP_CN, TOKEN, _ctx
+    from .cli import client_ctx, resolve_server_cn
+
     cfg = _mconf.apply_env()
     UP_HOST = cfg["host"]
     UP_PORT = int(cfg["port"])
@@ -35,7 +45,13 @@ def _init() -> None:
     LISTEN_HOST = cfg.get("proxy", {}).get("listen_host", "127.0.0.1")
     LISTEN_PORT = int(cfg.get("proxy", {}).get("listen_port", 8899))
     UP_CN = cfg.get("cn") or os.environ.get("MINAS_CN", "")
+    if not UP_CN:
+        # Host/SNI must be the device CN — probe the server cert like the CLI does.
+        UP_CN = resolve_server_cn(UP_HOST, UP_PORT)
+        os.environ["MINAS_CN"] = UP_CN
     TOKEN = base64.b64encode(f"{UP_USER}:{UP_PASS}".encode()).decode()
+    # Upstream requires mTLS; a bare context gets HTTP 451.
+    _ctx = client_ctx()
 
 HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -128,8 +144,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def run(argv: list[str] | None = None) -> int:
-    # argv accepted for `python -m minas_webdav proxy` symmetry; currently unused
-    _ = argv
+    """Start the loopback reverse proxy.
+
+    ``argv`` exists for symmetry with the other entry points, because
+    ``__main__.py`` dispatches ``python -m minas_webdav proxy ...`` with the
+    remaining arguments. (It used to take no parameter, so ``-m ... proxy``
+    died with ``TypeError: run() takes 0 positional arguments``.) Settings come
+    from ``minas_config.json`` / environment, so extra arguments are reported
+    and ignored rather than silently swallowed. The ``minas-webdav-proxy``
+    console script calls this with no arguments.
+    """
+    if argv:
+        print(
+            f"proxy: ignoring extra arguments {argv!r}; "
+            "configure via minas_config.json (proxy.listen_host/listen_port) or env",
+            file=sys.stderr,
+        )
     _init()
     httpd = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
     httpd.daemon_threads = True

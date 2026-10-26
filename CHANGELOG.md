@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Linux / macOS support.** The CLI, `probe` and `proxy` only use the standard
+  library, so they run on POSIX as-is once the certs and credentials are in
+  place. Defaults are now platform-aware: `%LOCALAPPDATA%\minasCert` /
+  `%LOCALAPPDATA%\minasCred\credentials.env` on Windows,
+  `$DSH_HOME/minasCert` / `$DSH_HOME/minasCred/credentials.env` elsewhere
+  (falling back to `~/.dsh/…`). `MINAS_CERT_HOME` / `MINAS_CRED_FILE` still win.
+- `scripts/minas-webdav`: POSIX wrapper that runs the CLI from the repository
+  root with `MIMO_PYTHON` / `PYTHON` (default `python3`).
+- `cli._cn_from_der()`: the device CN is derived without Windows-only
+  `certutil` — `cryptography` when importable, then the `openssl` CLI, then
+  `certutil` as the last resort. This is what previously made POSIX fail even
+  with valid certificates.
+- `cli.safe_put()`: the device answers a PUT that overwrites an existing
+  resource with `204`, keeps the **old** size, and leaves the new head followed
+  by the old tail (shorter payloads only). Uploads now go to a temporary name
+  and are `MOVE`d into place, then verified by size and (by default) sha256;
+  a mismatch is reported as a failure instead of a silent success. Downgrade
+  with `MINAS_PUT_VERIFY=size` (skip the download) or `off`.
+- `tests/test_safe_put.py`: offline tests pinning the temp-name/`MOVE`/verify
+  contract, the `DELETE`+`PUT` fallback and the failure modes.
+
+### Fixed
+
+- `%VAR%` placeholders are expanded on POSIX too: `os.path.expandvars` only
+  understands `$VAR`, so the Windows-style defaults turned into a literal
+  `%LOCALAPPDATA%\minasCert` directory name and certificates were never
+  found.
+- `cli.CERT_HOME` no longer degrades to the relative path `minasCert` when
+  `LOCALAPPDATA` is unset.
+- Missing-cert / missing-credential hints print the paths actually searched plus
+  a secret-free environment summary instead of a hard-coded Windows path.
+- `minas_config.example.json` no longer pins `cert_home`; the default is derived
+  per platform.
+
 ## [0.1.4] - 2026-10-26
 
 ### Fixed
