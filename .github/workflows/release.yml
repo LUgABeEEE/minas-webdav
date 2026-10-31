@@ -7,7 +7,7 @@ name: Release
 #   Repository name   : minas-webdav
 #   Workflow name     : release.yml
 #   Environment name  : pypi
-# Then push a tag: git tag -a v0.1.0 -m "minas-webdav 0.1.0" && git push --follow-tags
+# Then push a tag: git tag -a vX.Y.Z -m "minas-webdav X.Y.Z" && git push --follow-tags
 
 on:
   push:

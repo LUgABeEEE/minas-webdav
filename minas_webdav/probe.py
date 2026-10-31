@@ -9,10 +9,8 @@ import http.client
 import os
 import re
 import socket
-import ssl
 import sys
 import urllib.parse
-from pathlib import Path
 
 from . import config as _mconf
 

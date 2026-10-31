@@ -62,7 +62,7 @@ python3 -m venv .venv
 - 本项目的能力基线是 **WebDAV 协议面**（上表 Allow/DAV），不绑定固件号；OTA 若改协议面，排查顺序：
   1. `python -m minas_webdav probe` 看能力表变化
   2. `references/webdav-surface.md`（skill）/ `docs/webdav-surface.md`（仓库）的已知坑
-  3. 客户端重新登录以刷新证书/凭据
+  3. 客户端重新登录以刷新凭据；**证书续签不可手动触发**，只在到期后由官方客户端自动换发
 - `mcp` 2.x 与 1.x API 不同（`FastMCP` → `MCPServer`）；本仓库按 **2.x** 编写，若装 1.x 会导入失败
 - 客户端 1.0.8.170 为实测版本；更高版本预期兼容（协议面未变时）
 

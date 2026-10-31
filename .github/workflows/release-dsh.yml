@@ -14,7 +14,7 @@ name: Release DSH plugin
 # workflow release-dsh.yml, and set the repository variable
 # NPM_TRUSTED_PUBLISHING=true. From then on a dsh-v* tag publishes without a token.
 #
-# Release: git tag -a dsh-v0.1.1 -m "dsh-minas-webdav 0.1.1" && git push --follow-tags
+# Release: git tag -a dsh-vX.Y.Z -m "dsh-minas-webdav X.Y.Z" && git push --follow-tags
 
 on:
   push:

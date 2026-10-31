@@ -28,7 +28,8 @@ pip install "minas-webdav[mcp]"      # 需要 MCP server 时加 extra
 
 1. NAS 与本机同一局域网（默认 `192.168.1.100:5000`）
 2. 官方客户端已登录过，拿到 mTLS 证书三件套（`*_cert.pem` / `*_private_key.pem` / `ca_chain.pem`，**必须同目录**）
-   —— 证书**约 21 天过期**，且只能由官方客户端签发；Linux 上的自动取回见 [docs/CERT-REFRESH.md](docs/CERT-REFRESH.md)
+   —— 证书**约 21 天过期**，而且**不能手动刷新**：只有官方客户端会在证书到期后自动换发新的三件套，无法提前触发；
+   Linux 侧只需要在换发后把新证书取回来装好，见 [docs/CERT-REFRESH.md](docs/CERT-REFRESH.md)
 3. 凭据文件在**仓库外**
 
 证书目录与凭据文件的默认位置**按平台自动选择**（可用 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖）：
@@ -93,15 +94,15 @@ scripts/minas-webdav ls /pool0/data --json
 MIMO_PYTHON=/usr/bin/python3 scripts/minas-webdav df
 ```
 
-#### 证书过期怎么办（Linux）
+#### 证书到期后怎么办（Linux）
 
-证书约 21 天过期，且 Linux 上无法自行续签（只有官方客户端能签发）。仓库自带一个 Linux 专用的取回脚本：
-它读一个「中转目录」（已挂载的共享 / 同步盘都行），发现有新证书包就校验 sha256、`0600` 安装、**真连一次设备验证**，通过后才清理中转包；需要人工时用你指定的命令发通知。
+证书约 21 天过期，而且**没有「手动刷新」这个操作**：续签只会在证书到期后由官方客户端自动完成，没法提前触发，也不是在 Linux 上发生的。所以 Linux 这一侧要做的事只有一件——**等新的三件套出现，然后把它收下来、校验、装好**。仓库自带这个搬运脚本：
+它读一个「中转目录」（已挂载的共享 / 同步盘都行），发现有新证书包就校验 sha256、`0600` 安装、**真连一次设备验证**，通过后才清理中转包；需要人工时用你指定的命令发通知（到期前提醒你「客户端还没换发」也是它要干的事）。
 
 ```sh
-./scripts/minas-cert-refresh.sh --check --json          # 只剩几天？
+./scripts/minas-cert-refresh.sh --check --json          # 还剩几天？新包到了吗？
 MINAS_STAGE_DIR=/mnt/nas/_incoming \
-  ./scripts/minas-cert-refresh.sh --auto                # 有包就装
+  ./scripts/minas-cert-refresh.sh --auto                # 有包就装（它不能催客户端续签）
 ```
 
 细节（包里要有哪些文件、systemd timer 怎么配、失败怎么排查）见 **[docs/CERT-REFRESH.md](docs/CERT-REFRESH.md)**。
@@ -140,11 +141,16 @@ sudo mount -t davfs http://127.0.0.1:8899/ /mnt/nas-n
 ```text
 minas_webdav/
   config.py    # 配置与凭据加载（跨平台默认路径 + minas_config.json + credentials.env）
-  cli.py       # 文件 CLI
+  cli.py       # argparse 入口（build_parser / main）+ 历史导入面的再导出
+  client.py    # mTLS 上下文、设备 CN 探测、MinasWebDAV 连接层
+  commands.py  # 每个子命令一个 cmd_*（含安全 PUT 覆盖）
+  davxml.py    # PROPFIND multistatus 解析（不认 namespace 前缀）
+  paths.py     # 路径规整 / data-root 沙箱 / 体积格式化 / 通配符转换
   probe.py     # 能力探测
   proxy.py     # 本机反向代理（平台中立；Windows 给 net use，Linux 给 davfs2）
 scripts/       # 包装脚本（POSIX `minas-webdav`）+ 证书取回（Linux）+ 挂盘/清理脚本（Windows .ps1）
 docs/          # ENVIRONMENT.md / webdav-surface.md 实测结论 / CERT-REFRESH.md 证书取回
+tests/         # 离线单测：paths / safe_put / commands / mcp / 文档副本一致性
 ```
 
 ## 协议要点（详见 [docs/webdav-surface.md](docs/webdav-surface.md)）

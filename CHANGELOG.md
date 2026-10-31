@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
+### Added
+
+- `--version` for every entry point: `python -m minas_webdav --version` and the
+  `minas-webdav` console script now print the package version.
+- `tests/test_commands.py`: offline tests for the command layer against a fake
+  client — PROPFIND depth selection, MOVE/COPY `Destination`/`Overwrite`
+  headers, DELETE ordering for `rm -r`, temp-name uploads, exit codes and the
+  JSON vs text output.
+- `tests/test_mcp.py`: pins the 14 `nas_*` MCP tools, their descriptions and the
+  `nas_rm` `recursive`/`confirm` contract. Skipped when the `mcp` extra is not
+  installed.
+- `tests/test_docs.py`: keeps `skill/references/webdav-surface.md` byte-identical
+  to `docs/webdav-surface.md`, so the packaged skill copy cannot drift.
+- CI: a `windows-latest` leg (Python 3.12/3.13) beside Linux 3.10–3.13, the
+  `[mcp]` extra installed so the MCP tests actually run, a `ruff` job and a
+  `pip-audit` job. New `.github/workflows/codeql.yml` (push, PR, weekly).
+- Packaging: `[project.optional-dependencies] posix = ["cryptography>=42"]` for
+  the certutil-free CN derivation, and `dev` now carries `ruff`.
+- `[tool.ruff]` configuration (line-length 120, rules `E,F,W,I,B`).
+
+### Changed
+
+- `cli.py` (964 lines) split into `client.py` (transport, TLS/mTLS, CN
+  discovery), `commands.py` (one `cmd_*` per subcommand), `davxml.py`
+  (multistatus parsing) and `paths.py` (path sandbox, formatting, wildcards).
+  `minas_webdav.cli` keeps `build_parser` / `main` plus the historical
+  re-exports, so the MCP server, probe/proxy and third-party imports do not
+  change.
+- README project structure updated; `docs/RELEASING.md` now shows placeholder
+  tags and includes the lint/MCP test step.
+
+### Fixed
+
+- **Docs: the certificate cannot be refreshed manually.** Renewal only happens
+  automatically *after* the current certificate expires; there is no way to
+  trigger it earlier. README, `docs/CERT-REFRESH.md`, the skill troubleshooting
+  table, `docs/ENVIRONMENT.md` and the script header said it as if a manual
+  refresh existed — they now state the real constraint and scope the helper to
+  "collect the rotated triple, verify it, install it".
+- `SECURITY.md` supported-versions table (0.1.x → 0.3.x).
+- Dead code (`depth`, `last_status`, `last_body`) and unused imports removed;
+  `ruff check` is clean.
+
 ## [0.2.0] - 2026-10-31
 
 ### Added
@@ -145,7 +190,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.2...v0.1.3

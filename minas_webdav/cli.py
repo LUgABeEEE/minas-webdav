@@ -16,851 +16,110 @@ Examples:
   python -m minas_webdav find /pool0/data --name "*.mp4" --max-depth 3
 
 Exit codes: 0 ok, 1 usage/error, 2 not found, 3 auth/network.
+
+The implementation lives in `client` (transport), `davxml` (PROPFIND parsing),
+`paths` (path sandbox) and `commands` (one handler per subcommand); this module
+keeps the argparse surface plus the historical `minas_webdav.cli.*` import
+surface.
 """
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
-import json
-import os
-import re
-import socket
-import ssl
 import sys
-import http.client
-import urllib.parse
-from pathlib import Path
-from typing import Any, Iterable
 
-from . import config as _mconf
-_mconf.apply_env()
-
-DEFAULT_NAS_IP = os.environ.get("MINAS_IP", "192.168.1.100")
-DEFAULT_WEBDAV_PORT = int(os.environ.get("MINAS_PORT", "5000"))
-# Platform-aware: %LOCALAPPDATA%\minasCert on Windows, $DSH_HOME/minasCert
-# (else ~/.dsh/minasCert) elsewhere. Avoids the old Path("")/"minasCert"
-# relative-path fallback when LOCALAPPDATA was unset.
-CERT_HOME = _mconf.default_cert_home()
-DATA_ROOT = os.environ.get("MINAS_DATA_ROOT", "/pool0/data")
-
-
-def _cn_from_der(der: bytes) -> str:
-    """Subject CN of a DER certificate, cross-platform.
-
-    Tries the ``cryptography`` package, then the ``openssl`` CLI (ubiquitous on
-    POSIX), then ``certutil -dump`` (Windows). Returns "" if none work.
-    """
-    # 1) cryptography (pure-python, no subprocess)
-    try:
-        from cryptography import x509  # type: ignore
-        from cryptography.x509.oid import NameOID  # type: ignore
-
-        attrs = x509.load_der_x509_certificate(der).subject.get_attributes_for_oid(
-            NameOID.COMMON_NAME
-        )
-        if attrs:
-            return str(attrs[0].value).strip()
-    except Exception:
-        pass
-    # 2) openssl CLI
-    try:
-        import subprocess
-        import tempfile
-
-        with tempfile.NamedTemporaryFile("wb", suffix=".der", delete=False) as fh:
-            fh.write(der)
-            path = fh.name
-        try:
-            out = subprocess.run(
-                ["openssl", "x509", "-inform", "DER", "-in", path, "-noout", "-subject"],
-                capture_output=True, text=True, timeout=10,
-            )
-            m = re.search(r"CN\s*=\s*([^,/\n]+)", out.stdout or "")
-            if m:
-                return m.group(1).strip()
-        finally:
-            Path(path).unlink(missing_ok=True)
-    except Exception:
-        pass
-    # 3) certutil -dump (Windows)
-    try:
-        import subprocess
-        import tempfile
-
-        tmp = Path(tempfile.gettempdir()) / "minas_peer.cer"
-        tmp.write_bytes(der)
-        out = subprocess.check_output(["certutil", "-dump", str(tmp)],
-                                      stderr=subprocess.STDOUT)
-        m = re.search(r"CN=([^,\r\n]+)", out.decode("utf-8", "replace"))
-        if m:
-            return m.group(1).strip()
-    except Exception:
-        pass
-    return ""
-
-
-def enc_path(path: str) -> str:
-    if not path.startswith("/"):
-        path = "/" + path
-    return "/".join(urllib.parse.quote(seg, safe="") if seg else seg for seg in path.split("/"))
-
-
-def norm(path: str) -> str:
-    path = path.replace("\\", "/")
-    if not path.startswith("/"):
-        path = "/" + path
-    # collapse //
-    while "//" in path:
-        path = path.replace("//", "/")
-    if path != "/" and path.endswith("/"):
-        path = path[:-1]
-    return path
-
-
-def find_certs() -> tuple[str, str, str] | None:
-    if not CERT_HOME.exists():
-        return None
-    certs = sorted(CERT_HOME.glob("*_cert.pem"), key=lambda p: p.stat().st_mtime, reverse=True)
-    for cert in certs:
-        uid_did = cert.name.replace("_cert.pem", "")
-        key = CERT_HOME / f"{uid_did}_private_key.pem"
-        ca = CERT_HOME / "ca_chain.pem"
-        if key.exists() and ca.exists():
-            return str(cert), str(key), str(ca)
-    return None
-
-
-def resolve_server_cn(ip: str, port: int) -> str:
-    """CN of the device certificate (used for Host/SNI), probed over TLS.
-
-    Needed by entry points that have no config/env CN — the device rejects a
-    bare IP/hostname.
-    """
-    return MinasWebDAV(ip, port)._resolve_cn()
-
-
-def client_ctx() -> ssl.SSLContext:
-    """TLS context for talking to the device, with mTLS when a cert trio exists.
-
-    The device answers **HTTP 451** to requests that carry no client
-    certificate, so every code path must use this. `probe` and `proxy` used to
-    build a bare unverified context and could therefore never work against a
-    real device.
-    """
-    certs = find_certs()
-    if certs:
-        cert, key, ca = certs
-        ctx = ssl.create_default_context(cafile=ca)
-        ctx.load_cert_chain(certfile=cert, keyfile=key)
-        ctx.check_hostname = False
-        return ctx
-    return _mconf.unverified_ctx()
-
-
-class MinasWebDAV:
-    def __init__(self, ip: str = DEFAULT_NAS_IP, port: int = DEFAULT_WEBDAV_PORT):
-        self.ip = ip
-        self.port = port
-        self.username = os.environ.get("MINAS_USER", "")
-        self.password = os.environ.get("MINAS_PASS", "")
-        self.server_cn = os.environ.get("MINAS_CN", "")
-        self._ctx = None
-        self._token = ""
-        self._connected = False
-
-    def _make_ctx(self, with_mtls: bool) -> ssl.SSLContext:
-        certs = find_certs()
-        if with_mtls and certs:
-            cert, key, ca = certs
-            ctx = ssl.create_default_context(cafile=ca)
-            ctx.load_cert_chain(certfile=cert, keyfile=key)
-            ctx.check_hostname = False
-            return ctx
-        ctx = _mconf.unverified_ctx()
-        return ctx
-
-    def _resolve_cn(self) -> str:
-        if self.server_cn:
-            return self.server_cn
-        # probe server cert CN
-        ctx = _mconf.unverified_ctx()
-        sock = socket.create_connection((self.ip, 443 if self.port == 5000 else self.port), timeout=8)
-        try:
-            ssock = ctx.wrap_socket(sock, server_hostname="x")
-            der = ssock.getpeercert(binary_form=True)
-            ssock.close()
-        except Exception:
-            # webdav port may not do 443 handshake the same; try webdav port
-            sock.close()
-            sock = socket.create_connection((self.ip, self.port), timeout=8)
-            ssock = ctx.wrap_socket(sock, server_hostname="x")
-            der = ssock.getpeercert(binary_form=True)
-            ssock.close()
-        # Parse the CN out of the DER cert, cross-platform (the old code shelled
-        # out to `certutil`, which only exists on Windows).
-        cn = _cn_from_der(der)
-        if not cn:
-            raise RuntimeError(
-                "cannot parse server CN from cert; set `cn` in minas_config.json "
-                "or MINAS_CN explicitly (needed for Host/SNI — the device rejects "
-                "a bare IP/hostname)"
-            )
-        self.server_cn = cn
-        return self.server_cn
-
-    def discover(self) -> dict[str, Any]:
-        """Fetch pool info via LuCI mTLS API (local tunnel or direct)."""
-        certs = find_certs()
-        if not certs:
-            raise RuntimeError(
-                f"certs not found under {CERT_HOME}; login the official client first "
-                f"and/or copy the mTLS trio (*_cert.pem, *_private_key.pem, ca_chain.pem) "
-                f"there, or set MINAS_CERT_HOME / cert_home to where they are. "
-                f"[{_mconf.describe_env()}]"
-            )
-        cert, key, ca = certs
-        cn = self._resolve_cn()
-        ctx = ssl.create_default_context(cafile=ca)
-        ctx.load_cert_chain(certfile=cert, keyfile=key)
-        ctx.check_hostname = False
-
-        hosts = [(self.ip, 443), ("127.0.0.1", 51087)]
-        last_err = None
-        for host, port in hosts:
-            try:
-                conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=10)
-                sock = socket.create_connection((host, port), timeout=10)
-                ssock = ctx.wrap_socket(sock, server_hostname=cn)
-                conn.sock = ssock
-                body = b"{}"
-                conn.request(
-                    "POST",
-                    "/cgi-bin/luci/filemgr/get_pool_info",
-                    body=body,
-                    headers={"Content-Type": "application/json", "Host": cn, "Content-Length": str(len(body))},
-                )
-                resp = conn.getresponse()
-                data = resp.read()
-                conn.close()
-                if resp.status != 200:
-                    last_err = f"{host}:{port} HTTP {resp.status}"
-                    continue
-                payload = json.loads(data.decode("utf-8", "replace"))
-                w = payload.get("data", {}).get("webDAV") or {}
-                if not w.get("username"):
-                    last_err = f"{host}:{port} no webDAV creds"
-                    continue
-                self.username = w["username"]
-                self.password = w["password"]
-                self.server_cn = cn
-                self._connected = True
-                return payload
-            except Exception as e:
-                last_err = f"{host}:{port} {type(e).__name__}: {e}"
-        raise RuntimeError(f"discover failed: {last_err}")
-
-    def ensure_auth(self) -> None:
-        if self.username and self.password and self.server_cn:
-            self._token = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
-            self._connected = True
-            return
-        if not self._connected:
-            self.discover()
-            self._token = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
-
-    def request(
-        self,
-        method: str,
-        path: str,
-        body: bytes | None = None,
-        headers: dict[str, str] | None = None,
-        with_mtls: bool = False,
-    ) -> tuple[int, dict[str, str], bytes]:
-        self.ensure_auth()
-        headers = dict(headers or {})
-        headers.setdefault("Authorization", "Basic " + self._token)
-        headers.setdefault("Host", self.server_cn)
-        headers.setdefault("Connection", "close")
-        headers.setdefault("User-Agent", "minas-cli/1.0")
-        if body is not None:
-            headers["Content-Length"] = str(len(body))
-        ctx = self._make_ctx(with_mtls=with_mtls)
-        sock = socket.create_connection((self.ip, self.port), timeout=60)
-        ssock = ctx.wrap_socket(sock, server_hostname=self.server_cn)
-        conn = http.client.HTTPSConnection(self.ip, self.port, context=ctx, timeout=60)
-        conn.sock = ssock
-        try:
-            conn.request(method, enc_path(path), body=body, headers=headers)
-            resp = conn.getresponse()
-            data = resp.read()
-            hdrs = {k: v for k, v in resp.getheaders()}
-            return resp.status, hdrs, data
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-    def propfind(self, path: str, depth: str = "1", with_mtls: bool = False) -> list[dict[str, Any]]:
-        body = (
-            b'<?xml version="1.0"?>'
-            b'<a:propfind xmlns:a="DAV:"><a:prop>'
-            b"<a:displayname/><a:getcontentlength/><a:resourcetype/>"
-            b"<a:getlastmodified/><a:creationdate/>"
-            b"</a:prop></a:propfind>"
-        )
-        status, _, data = self.request(
-            "PROPFIND",
-            path,
-            body=body,
-            headers={"Content-Type": "application/xml", "Depth": depth},
-            with_mtls=with_mtls,
-        )
-        if status not in (207, 200):
-            raise RuntimeError(f"PROPFIND {path} -> HTTP {status}: {data[:200]!r}")
-        return parse_multistatus(data.decode("utf-8", "replace"), self_prefix=path)
-
-    def is_dir(self, path: str) -> bool:
-        items = self.propfind(path, depth="0", with_mtls=True)
-        return bool(items) and items[0]["is_dir"]
-
-
-def _split_responses(text: str) -> list[str]:
-    """Split a multistatus body on <xxx:response> regardless of namespace prefix."""
-    return re.split(r"<(?:[A-Za-z0-9_]+:)?response(?:\s[^>]*)?>", text)[1:]
-
-
-def _tag_text(block: str, local: str) -> str | None:
-    m = re.search(rf"<(?:[A-Za-z0-9_]+:)?{local}(?:\s[^>]*)?>(.*?)</(?:[A-Za-z0-9_]+:)?{local}>", block, re.S)
-    return m.group(1) if m else None
-
-
-def parse_multistatus(text: str, self_prefix: str = "") -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    blocks = _split_responses(text)
-    for block in blocks:
-        href_raw = _tag_text(block, "href")
-        if href_raw is None:
-            continue
-        href = urllib.parse.unquote(href_raw)
-        name_raw = _tag_text(block, "displayname")
-        size_raw = _tag_text(block, "getcontentlength")
-        mod_raw = _tag_text(block, "getlastmodified")
-        is_dir = bool(re.search(r"<(?:[A-Za-z0-9_]+:)?collection(?:\s*/|>)", block))
-        name = urllib.parse.unquote(name_raw) if name_raw else href.rstrip("/").split("/")[-1]
-        size = int(size_raw) if size_raw and size_raw.isdigit() else 0
-        # skip self entry when depth>0 includes it
-        if self_prefix and href.rstrip("/") == self_prefix.rstrip("/") and len(blocks) > 1:
-            # keep only if sole entry (depth 0)
-            continue
-        items.append(
-            {
-                "path": href if href.startswith("/") else "/" + href,
-                "name": name,
-                "size": size,
-                "is_dir": is_dir,
-                "modified": mod_raw or "",
-            }
-        )
-    # depth=0 often returns exactly one self item — keep it
-    if not items:
-        items = parse_multistatus_self(text)
-    return items
-
-
-def parse_multistatus_self(text: str) -> list[dict[str, Any]]:
-    out = []
-    for block in _split_responses(text):
-        href_raw = _tag_text(block, "href")
-        if href_raw is None:
-            continue
-        href = urllib.parse.unquote(href_raw)
-        name_raw = _tag_text(block, "displayname")
-        is_dir = bool(re.search(r"<(?:[A-Za-z0-9_]+:)?collection(?:\s*/|>)", block))
-        size_raw = _tag_text(block, "getcontentlength")
-        out.append(
-            {
-                "path": href,
-                "name": urllib.parse.unquote(name_raw) if name_raw else href,
-                "size": int(size_raw) if size_raw and size_raw.isdigit() else 0,
-                "is_dir": is_dir,
-                "modified": "",
-            }
-        )
-    return out
-
-
-def fmt_size(n: float) -> str:
-    n = float(n)
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if abs(n) < 1024:
-            return f"{n:.1f}{unit}"
-        n /= 1024
-    return f"{n:.1f}PB"
-
-
-def ensure_data_path(path: str) -> str:
-    """Normalize a user path to an absolute path under DATA_ROOT.
-
-    Rejects ``..`` escapes and sibling prefixes like ``/pool0evil``.
-    Bare names are treated as relative to DATA_ROOT.
-    """
-    p = norm(path)
-    if p in ("", "/"):
-        return DATA_ROOT
-    if ".." in p.split("/"):
-        raise ValueError("path must stay under the data root (no '..')")
-    root = norm(DATA_ROOT)
-    # bare /name or name → under DATA_ROOT
-    if p != root and not p.startswith(root + "/") and not p.startswith("/pool0/"):
-        if not p.startswith("/"):
-            p = "/" + p
-        p = root.rstrip("/") + p
-        p = norm(p)
-        if ".." in p.split("/"):
-            raise ValueError("path must stay under the data root (no '..')")
-    # absolute paths must stay inside DATA_ROOT (not just /pool0*)
-    if p != root and not p.startswith(root + "/"):
-        raise ValueError(f"path outside data root ({root}): {path}")
-    return p
-
-
-# --------------- commands ---------------
-
-def cmd_ls(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    path = ensure_data_path(args.path)
-    depth = "0" if args.long is False and args.self_only else "1"
-    if args.self_only:
-        depth = "0"
-    try:
-        items = client.propfind(path, depth="0" if args.self_only else "1", with_mtls=True)
-    except RuntimeError as e:
-        print(e, file=sys.stderr)
-        return 2
-    # For depth 1, drop self if present
-    if not args.self_only:
-        items = [it for it in items if norm(it["path"]) != norm(path)]
-    items.sort(key=lambda x: (not x["is_dir"], x["name"]))
-    if args.json:
-        print(json.dumps(items, ensure_ascii=False, indent=2))
-        return 0
-    for it in items:
-        kind = "d" if it["is_dir"] else "-"
-        size = fmt_size(it["size"]) if not it["is_dir"] else ""
-        print(f"{kind} {size:>10}  {it['name']}")
-    return 0
-
-
-def cmd_stat(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    path = ensure_data_path(args.path)
-    try:
-        items = client.propfind(path, depth="0", with_mtls=True)
-    except RuntimeError as e:
-        print(e, file=sys.stderr)
-        return 2
-    if not items:
-        print("not found", file=sys.stderr)
-        return 2
-    it = items[0]
-    if args.json:
-        print(json.dumps(it, ensure_ascii=False, indent=2))
-    else:
-        print(f"path: {it['path']}")
-        print(f"name: {it['name']}")
-        print(f"type: {'dir' if it['is_dir'] else 'file'}")
-        print(f"size: {it['size']} ({fmt_size(it['size'])})")
-        print(f"modified: {it.get('modified','')}")
-    return 0
-
-
-def walk_sizes(client: MinasWebDAV, path: str, max_depth: int, depth: int = 0) -> tuple[int, int]:
-    """Return (total_bytes, file_count)."""
-    total = 0
-    count = 0
-    try:
-        items = client.propfind(path, depth="1", with_mtls=True)
-    except Exception as e:
-        print(f"warn: {path}: {e}", file=sys.stderr)
-        return 0, 0
-    for it in items:
-        if norm(it["path"]) == norm(path):
-            continue
-        if it["is_dir"]:
-            if depth < max_depth:
-                sub_total, sub_count = walk_sizes(client, it["path"], max_depth, depth + 1)
-                total += sub_total
-                count += sub_count
-        else:
-            total += it["size"]
-            count += 1
-    return total, count
-
-
-def cmd_du(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    path = ensure_data_path(args.path)
-    max_depth = args.max_depth
-    try:
-        items = client.propfind(path, depth="1", with_mtls=True)
-    except RuntimeError as e:
-        print(e, file=sys.stderr)
-        return 2
-    rows = []
-    for it in items:
-        if norm(it["path"]) == norm(path):
-            continue
-        if it["is_dir"]:
-            total, count = walk_sizes(client, it["path"], max_depth=max_depth)
-            rows.append((it["name"], total, count, True))
-        else:
-            rows.append((it["name"], it["size"], 1, False))
-    rows.sort(key=lambda r: -r[1])
-    if args.json:
-        print(json.dumps([{"name": n, "bytes": b, "files": c, "is_dir": d} for n, b, c, d in rows], ensure_ascii=False, indent=2))
-        return 0
-    grand = 0
-    for name, total, count, is_dir in rows:
-        grand += total
-        mark = "/" if is_dir else ""
-        print(f"{fmt_size(total):>10}  {count:>6}  {name}{mark}")
-    print("-" * 40)
-    print(f"{fmt_size(grand):>10}  TOTAL")
-    return 0
-
-
-def cmd_df(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    # use LuCI storage API when possible via discover payload
-    try:
-        payload = client.discover()
-        pool = (payload.get("data") or {}).get("internal_pool") or []
-        if pool:
-            p0 = pool[0]
-            total = int(p0.get("total_size") or 0)
-            used = int(p0.get("used_size") or 0)
-            info = {
-                "name": p0.get("name"),
-                "total_bytes": total,
-                "used_bytes": used,
-                "free_bytes": total - used,
-                "total_human": fmt_size(total),
-                "used_human": fmt_size(used),
-                "free_human": fmt_size(total - used),
-                "data_dir": p0.get("data_dir"),
-            }
-            if args.json:
-                print(json.dumps(info, ensure_ascii=False, indent=2))
-            else:
-                print(f"pool: {info['name']}  data_dir={info['data_dir']}")
-                print(f"total: {info['total_human']}  used: {info['used_human']}  free: {info['free_human']}")
-            return 0
-    except Exception as e:
-        print(f"warn: pool info unavailable: {e}", file=sys.stderr)
-    print("pool info unavailable", file=sys.stderr)
-    return 3
-
-
-def cmd_get(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    remote = ensure_data_path(args.remote)
-    local = Path(args.local)
-    status, headers, data = client.request("GET", remote, with_mtls=True)
-    if status == 404:
-        print(f"not found: {remote}", file=sys.stderr)
-        return 2
-    if status not in (200, 206):
-        print(f"GET {remote} -> HTTP {status}", file=sys.stderr)
-        return 1
-    if local.is_dir():
-        local = local / norm(remote).rstrip("/").split("/")[-1]
-    local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(data)
-    print(f"saved {local} ({fmt_size(len(data))})")
-    return 0
-
-
-def cmd_put(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    local = Path(args.local)
-    if not local.exists():
-        print(f"local not found: {local}", file=sys.stderr)
-        return 2
-    if local.is_dir():
-        print("local is a directory; upload files one by one or use a sync tool", file=sys.stderr)
-        return 1
-    remote = ensure_data_path(args.remote)
-    data = local.read_bytes()
-    res = safe_put(client, remote, data)
-    if not res["ok"]:
-        print(f"upload failed: {res['error']}", file=sys.stderr)
-        return 1
-    print(f"uploaded {local} -> {remote} ({fmt_size(len(data))}) verified={res['verified']}")
-    return 0
-
-
-def cmd_cat(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    remote = ensure_data_path(args.path)
-    status, _, data = client.request("GET", remote, with_mtls=True)
-    if status == 404:
-        print(f"not found: {remote}", file=sys.stderr)
-        return 2
-    if status not in (200, 206):
-        print(f"GET failed HTTP {status}", file=sys.stderr)
-        return 1
-    sys.stdout.buffer.write(data)
-    return 0
-
-
-def cmd_mkdir(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    path = ensure_data_path(args.path)
-    # create parents
-    parts = norm(path).strip("/").split("/")
-    cur = ""
-    last_status, last_body = 0, b""
-    for part in parts:
-        cur += "/" + part
-        status, _, body = client.request("MKCOL", cur + "/", with_mtls=True)
-        last_status, last_body = status, body
-        if status not in (201, 204, 405):  # 405 = already exists
-            if status != 201 and status != 204:
-                # 301/405 ok-ish
-                if status not in (301, 405):
-                    print(f"MKCOL {cur} -> HTTP {status}", file=sys.stderr)
-                    return 1
-    print(f"mkdir ok: {path}")
-    return 0
-
-
-def cmd_rm(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    path = ensure_data_path(args.path)
-    if args.recursive:
-        # delete children first
-        try:
-            items = client.propfind(path, depth="1", with_mtls=True)
-        except RuntimeError:
-            items = []
-        for it in items:
-            if norm(it["path"]) == norm(path):
-                continue
-            if it["is_dir"]:
-                cmd_rm(client, argparse.Namespace(path=it["path"], recursive=True, json=False, force=True))
-            else:
-                client.request("DELETE", it["path"], with_mtls=True)
-    status, _, body = client.request("DELETE", path, with_mtls=True)
-    if status in (200, 204, 404):
-        print(f"removed: {path}")
-        return 0
-    if status == 409 and args.recursive:
-        print(f"DELETE {path} -> 409 (not empty?)", file=sys.stderr)
-        return 1
-    print(f"DELETE {path} -> HTTP {status}: {body[:160]!r}", file=sys.stderr)
-    return 1
-
-
-def dest_header(dest_path: str) -> str:
-    # path-only works (IP-in-URL → 400); must be percent-encoded — header
-    # values are latin-1 to http.client and raw CJK would raise.
-    return enc_path(norm(dest_path))
-
-
-# ---------------------------------------------------------------------------
-# 安全覆盖：绕开设备「PUT 不截断」的毛病
-#
-# 实测（2026-10-15，待办 t-f0df70f0）：设备上的 PUT 覆盖一个**已存在**的资源时
-# **不会截断**——新内容从偏移 0 写进去，旧文件的尾巴原样留着，于是文件变成
-# 「新头 + 旧尾」的混合体，服务端报告的长度仍是旧长度，而 PUT 照样回 204。
-# 24MB -> 2MB 得到的是 25165824 字节、sha256 既不是新版也不是旧版的文件；
-# 只要新内容比旧内容**短哪怕 1 字节**就会触发，与文件大小无关。
-#
-# 修法：绝不 PUT 到已存在的名字。先传到同目录的临时名（全新创建，不存在旧尾巴），
-# 再 MOVE 覆盖到目标名（替换是原子的）。MOVE 不可用时退回 DELETE + PUT。
-# 写完必须回读核对长度（长度不符 = 正是这个 bug 的形状），默认再核一次 sha256。
-# ---------------------------------------------------------------------------
-
-# sha | size | off —— 回读核对的强度，可用环境变量降级（大文件嫌慢时）
-PUT_VERIFY = os.environ.get("MINAS_PUT_VERIFY", "sha").strip().lower()
-PUT_TMP_SUFFIX = ".minas-uploading"
-
-
-def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _exists(client: MinasWebDAV, path: str) -> bool:
-    try:
-        return bool(client.propfind(path, depth="0", with_mtls=True))
-    except Exception:  # noqa: BLE001 — 判定失败按「不存在」处理，回读会兜住
-        return False
-
-
-def _put_bytes(client: MinasWebDAV, path: str, data: bytes) -> tuple[int, bytes]:
-    status, _, body = client.request(
-        "PUT", path, body=data,
-        headers={"Content-Type": "application/octet-stream"}, with_mtls=True,
-    )
-    return status, body
-
-
-def _move(client: MinasWebDAV, src: str, dst: str) -> int:
-    status, _, _ = client.request(
-        "MOVE", src,
-        headers={"Destination": dest_header(dst), "Overwrite": "T"},
-        with_mtls=True,
-    )
-    return status
-
-
-def safe_put(client: MinasWebDAV, remote: str, data: bytes,
-             verify: str | None = None) -> dict[str, Any]:
-    """把 data 安全写到 remote，返回 ok / status / size / verified / error。
-
-    从不直接 PUT 到已存在的名字；写完回读核对，不符就 ok=False，绝不静默成功。
-    """
-    verify = (verify or PUT_VERIFY or "sha").lower()
-    remote = norm(remote)
-    tmp = remote + PUT_TMP_SUFFIX
-    client.request("DELETE", tmp, with_mtls=True)  # 清掉上一次可能留下的残片
-
-    status, body = _put_bytes(client, tmp, data)
-    if status not in (200, 201, 204):
-        return {"ok": False, "status": status,
-                "error": f"PUT {tmp} -> HTTP {status}: {body[:160]!r}"}
-
-    target_existed = _exists(client, remote)
-    moved = _move(client, tmp, remote)
-    if moved not in (200, 201, 204):
-        if not target_existed:
-            return {"ok": False, "status": moved,
-                    "error": f"MOVE {tmp} -> {remote} -> HTTP {moved}"}
-        # 退回 DELETE + PUT：删掉旧的之后就是全新创建，不存在留尾巴的前提
-        client.request("DELETE", remote, with_mtls=True)
-        status2, body2 = _put_bytes(client, remote, data)
-        client.request("DELETE", tmp, with_mtls=True)
-        if status2 not in (200, 201, 204):
-            return {"ok": False, "status": status2,
-                    "error": f"PUT {remote} -> HTTP {status2}: {body2[:160]!r}"}
-
-    items = client.propfind(remote, depth="0", with_mtls=True)
-    got_size = items[0].get("size") if items else None
-    if got_size != len(data):
-        return {"ok": False, "status": 204, "size": got_size, "expected": len(data),
-                "error": f"回读长度 {got_size} != 写入 {len(data)}（正是不截断那个 bug 的形状）"}
-
-    if verify == "off":
-        return {"ok": True, "status": 204, "size": got_size, "verified": "none"}
-    if verify == "sha":
-        _, _, back = client.request("GET", remote, with_mtls=True)
-        if _sha256(back) != _sha256(data):
-            return {"ok": False, "status": 204, "size": got_size,
-                    "error": "回读 sha256 与写入内容不一致"}
-        return {"ok": True, "status": 204, "size": got_size,
-                "sha256": _sha256(data), "verified": "size+sha256"}
-    return {"ok": True, "status": 204, "size": got_size, "verified": "size"}
-
-
-def cmd_mv(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    src = ensure_data_path(args.src)
-    dst = ensure_data_path(args.dst)
-    status, _, body = client.request(
-        "MOVE",
-        src,
-        headers={"Destination": dest_header(dst), "Overwrite": "T" if args.force else "F"},
-        with_mtls=True,
-    )
-    if status in (200, 201, 204):
-        print(f"moved {src} -> {dst}")
-        return 0
-    print(f"MOVE failed HTTP {status}: {body[:160]!r}", file=sys.stderr)
-    return 1
-
-
-def cmd_cp(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    src = ensure_data_path(args.src)
-    dst = ensure_data_path(args.dst)
-    status, _, body = client.request(
-        "COPY",
-        src,
-        headers={"Destination": dest_header(dst), "Overwrite": "T" if args.force else "F"},
-        with_mtls=True,
-    )
-    if status in (200, 201, 204):
-        print(f"copied {src} -> {dst}")
-        return 0
-    print(f"COPY failed HTTP {status}: {body[:160]!r}", file=sys.stderr)
-    return 1
-
-
-def cmd_find(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    root = ensure_data_path(args.path)
-    max_depth = args.max_depth
-    name_re = re.compile(fnmatch_to_re(args.name)) if args.name else None
-    found = []
-
-    def rec(path: str, depth: int) -> None:
-        try:
-            items = client.propfind(path, depth="1", with_mtls=True)
-        except Exception as e:
-            print(f"warn: {path}: {e}", file=sys.stderr)
-            return
-        for it in items:
-            if norm(it["path"]) == norm(path):
-                continue
-            ok = True
-            if name_re and not name_re.search(it["name"]):
-                ok = False
-            if args.files and it["is_dir"]:
-                ok = False
-            if args.dirs and not it["is_dir"]:
-                ok = False
-            if ok:
-                found.append(it)
-            if it["is_dir"] and depth < max_depth:
-                rec(it["path"], depth + 1)
-
-    rec(root, 0)
-    if args.json:
-        print(json.dumps(found, ensure_ascii=False, indent=2))
-    else:
-        for it in found:
-            mark = "/" if it["is_dir"] else ""
-            print(f"{fmt_size(it['size']):>10}  {it['path']}{mark}")
-    return 0
-
-
-def fnmatch_to_re(pattern: str) -> str:
-    out = []
-    for ch in pattern:
-        if ch == "*":
-            out.append(".*")
-        elif ch == "?":
-            out.append(".")
-        else:
-            out.append(re.escape(ch))
-    return "".join(out)
-
-
-def cmd_tree(client: MinasWebDAV, args: argparse.Namespace) -> int:
-    root = ensure_data_path(args.path)
-
-    def rec(path: str, prefix: str, depth: int) -> None:
-        try:
-            items = client.propfind(path, depth="1", with_mtls=True)
-        except Exception:
-            return
-        items = [it for it in items if norm(it["path"]) != norm(path)]
-        items.sort(key=lambda x: (not x["is_dir"], x["name"]))
-        for i, it in enumerate(items):
-            last = i == len(items) - 1
-            branch = "└── " if last else "├── "
-            extra = "/" if it["is_dir"] else f"  ({fmt_size(it['size'])})"
-            print(f"{prefix}{branch}{it['name']}{extra}")
-            if it["is_dir"] and depth < args.max_depth:
-                rec(it["path"], prefix + ("    " if last else "│   "), depth + 1)
-
-    print(root)
-    rec(root, "", 0)
-    return 0
-
+from . import __version__
+from .client import (
+    CERT_HOME,
+    DEFAULT_NAS_IP,
+    DEFAULT_WEBDAV_PORT,
+    MinasWebDAV,
+    _cn_from_der,
+    client_ctx,
+    find_certs,
+    resolve_server_cn,
+)
+from .commands import (
+    PUT_TMP_SUFFIX,
+    PUT_VERIFY,
+    _exists,
+    _move,
+    _put_bytes,
+    _sha256,
+    cmd_cat,
+    cmd_cp,
+    cmd_df,
+    cmd_du,
+    cmd_find,
+    cmd_get,
+    cmd_ls,
+    cmd_mkdir,
+    cmd_mv,
+    cmd_put,
+    cmd_rm,
+    cmd_stat,
+    cmd_tree,
+    dest_header,
+    safe_put,
+    walk_sizes,
+)
+from .davxml import (
+    _split_responses,
+    _tag_text,
+    parse_multistatus,
+    parse_multistatus_self,
+)
+from .paths import DATA_ROOT, enc_path, ensure_data_path, fmt_size, fnmatch_to_re, norm
+
+# Re-exported on purpose: this module stays the stable import surface for the
+# MCP server, probe/proxy and third-party scripts.
+__all__ = [
+    "CERT_HOME",
+    "DATA_ROOT",
+    "DEFAULT_NAS_IP",
+    "DEFAULT_WEBDAV_PORT",
+    "MinasWebDAV",
+    "PUT_TMP_SUFFIX",
+    "PUT_VERIFY",
+    "_cn_from_der",
+    "_exists",
+    "_move",
+    "_put_bytes",
+    "_sha256",
+    "_split_responses",
+    "_tag_text",
+    "build_parser",
+    "client_ctx",
+    "cmd_cat",
+    "cmd_cp",
+    "cmd_df",
+    "cmd_du",
+    "cmd_find",
+    "cmd_get",
+    "cmd_ls",
+    "cmd_mkdir",
+    "cmd_mv",
+    "cmd_put",
+    "cmd_rm",
+    "cmd_stat",
+    "cmd_tree",
+    "dest_header",
+    "enc_path",
+    "ensure_data_path",
+    "find_certs",
+    "fmt_size",
+    "fnmatch_to_re",
+    "main",
+    "norm",
+    "parse_multistatus",
+    "parse_multistatus_self",
+    "resolve_server_cn",
+    "safe_put",
+    "walk_sizes",
+]
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="minas-webdav", description="Xiaomi Smart Storage WebDAV CLI for agents")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--ip", default=DEFAULT_NAS_IP, help="NAS IP (default env MINAS_IP or 192.168.1.100)")
     p.add_argument("--port", type=int, default=DEFAULT_WEBDAV_PORT, help="WebDAV port (default 5000)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -939,7 +198,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_tree)
 
     return p
-
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()

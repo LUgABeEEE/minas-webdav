@@ -83,7 +83,7 @@ Set-Location $home
 | 423 Locked | 路径锁（文件删除后仍存活 ≤60s）；等约 1 分钟或换路径重试 |
 | 403（PROPFIND） | `Depth: infinity` 被拒，必须 `Depth: 1` 逐层（CLI 已处理） |
 | MOVE/COPY 400 | Destination 必须是编码纯路径；**用 CLI，勿手拼** |
-| 证书/CN 报错 | 官方客户端重新登录以刷新 `%LOCALAPPDATA%\minasCert\` |
+| 证书/CN 报错 | 证书**不能手动刷新**：只有官方客户端会在到期后自动换发新的 `%LOCALAPPDATA%\minasCert\`；到期前只剩天数可看 `scripts/minas-cert-refresh.sh --check`（Linux 取见 `docs/CERT-REFRESH.md`） |
 | 代理/挂 N 盘问题 | `proxy` 起在 8899；`scripts\挂载NAS为N盘.ps1`；详见 references/webdav-surface.md |
 
 协议细节（事实/推测分档）见 `references/webdav-surface.md`。

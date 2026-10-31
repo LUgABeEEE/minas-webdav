@@ -30,12 +30,14 @@ GitHub 侧的环境 `pypi` 已建好，部署策略限制为 **只允许 `v*` ta
 # 1) 版本 + CHANGELOG 一起改（两处必须一致）
 $EDITOR pyproject.toml minas_webdav/__init__.py CHANGELOG.md
 
-# 2) 本地验证
+# 2) 本地验证（含 lint 与 MCP 用例）
+python -m pip install -e ".[mcp,dev]"
+ruff check .
 python -m unittest discover -s tests -v
 python -m build && python -m twine check dist/*
 
 # 3) 打 tag 并推送 —— 剩下的全自动
-git tag -a v0.1.1 -m "minas-webdav 0.1.1"
+git tag -a vX.Y.Z -m "minas-webdav X.Y.Z"
 git push --follow-tags
 ```
 

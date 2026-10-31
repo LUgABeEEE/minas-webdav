@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# minas-cert-refresh.sh — keep the MINAS WebDAV mTLS certificate fresh on Linux
+# minas-cert-refresh.sh — collect and install a rotated MINAS WebDAV certificate
 #
 # Why this exists:
 #   The device answers 451 to requests without a client certificate. The
 #   certificate is issued by the official Xiaomi Smart Storage desktop client,
 #   lives only on the machine running that client, and expires in ~21 days.
-#   A Linux box can therefore never renew it by itself — it can only *collect*
-#   a bundle produced elsewhere, verify it, install it and nag a human.
+#   There is no manual renewal: the client rotates the triple only once the
+#   current certificate has expired, and nothing can trigger it earlier. So a
+#   Linux box can only *collect* a bundle produced after that rotation, verify
+#   it, install it, and nag a human while the old certificate runs out.
 #
 # What it does:
 #   1. report the remaining lifetime of the installed certificate

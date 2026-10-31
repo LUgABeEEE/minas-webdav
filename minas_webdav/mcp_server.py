@@ -11,10 +11,9 @@ Shared core with the CLI (minas_webdav.cli / minas_webdav.config).
 """
 from __future__ import annotations
 
-import io
-import json
-import re
 import contextlib
+import io
+import re
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer  # mcp 2.x (FastMCP renamed)
@@ -300,7 +299,11 @@ def nas_put(local: str, remote: str) -> dict[str, Any]:
         return {"ok": False, "error": f"local file not found: {local}"}
     size = src.stat().st_size
     if size > MAX_PUT_BYTES:
-        return {"ok": False, "error": f"file too large ({size} bytes > {MAX_PUT_BYTES})", "hint": "use the CLI for large files"}
+        return {
+            "ok": False,
+            "error": f"file too large ({size} bytes > {MAX_PUT_BYTES})",
+            "hint": "use the CLI for large files",
+        }
     p = _safe_path(remote)
     try:
         # safe_put 而不是裸 PUT：设备对已存在资源的 PUT **不截断**，直接覆盖会把
@@ -369,7 +372,10 @@ def nas_cp(src: str, dst: str, force: bool = False) -> dict[str, Any]:
 
 @mcp.tool(annotations=DESTRUCTIVE)
 def nas_rm(path: str, recursive: bool = False, confirm: bool = False) -> dict[str, Any]:
-    """Delete a file or directory. DESTRUCTIVE. recursive=True requires confirm=True — only after the user explicitly agreed."""
+    """Delete a file or directory. DESTRUCTIVE.
+
+    recursive=True requires confirm=True — only after the user explicitly agreed.
+    """
     if recursive and not confirm:
         raise ValueError(
             "recursive delete requires confirm=true. Ask the user for explicit consent first."
@@ -399,7 +405,10 @@ def nas_rm(path: str, recursive: bool = False, confirm: bool = False) -> dict[st
 
 @mcp.tool(annotations=READ)
 def nas_probe() -> dict[str, Any]:
-    """Run the WebDAV capability probe (creates unique temp paths under /pool0/data and cleans up). Self-check after setup."""
+    """Run the WebDAV capability probe.
+
+    Creates unique temp paths under /pool0/data and cleans up. Self-check after setup.
+    """
     from . import probe as probe_mod
 
     buf = io.StringIO()
