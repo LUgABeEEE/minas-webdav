@@ -28,6 +28,7 @@ pip install "minas-webdav[mcp]"      # 需要 MCP server 时加 extra
 
 1. NAS 与本机同一局域网（默认 `192.168.1.100:5000`）
 2. 官方客户端已登录过，拿到 mTLS 证书三件套（`*_cert.pem` / `*_private_key.pem` / `ca_chain.pem`，**必须同目录**）
+   —— 证书**约 21 天过期**，且只能由官方客户端签发；Linux 上的自动取回见 [docs/CERT-REFRESH.md](docs/CERT-REFRESH.md)
 3. 凭据文件在**仓库外**
 
 证书目录与凭据文件的默认位置**按平台自动选择**（可用 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖）：
@@ -92,6 +93,19 @@ scripts/minas-webdav ls /pool0/data --json
 MIMO_PYTHON=/usr/bin/python3 scripts/minas-webdav df
 ```
 
+#### 证书过期怎么办（Linux）
+
+证书约 21 天过期，且 Linux 上无法自行续签（只有官方客户端能签发）。仓库自带一个 Linux 专用的取回脚本：
+它读一个「中转目录」（已挂载的共享 / 同步盘都行），发现有新证书包就校验 sha256、`0600` 安装、**真连一次设备验证**，通过后才清理中转包；需要人工时用你指定的命令发通知。
+
+```sh
+./scripts/minas-cert-refresh.sh --check --json          # 只剩几天？
+MINAS_STAGE_DIR=/mnt/nas/_incoming \
+  ./scripts/minas-cert-refresh.sh --auto                # 有包就装
+```
+
+细节（包里要有哪些文件、systemd timer 怎么配、失败怎么排查）见 **[docs/CERT-REFRESH.md](docs/CERT-REFRESH.md)**。
+
 ### 挂盘（可选）
 
 Windows（映射为 N 盘）：
@@ -129,8 +143,8 @@ minas_webdav/
   cli.py       # 文件 CLI
   probe.py     # 能力探测
   proxy.py     # 本机反向代理（平台中立；Windows 给 net use，Linux 给 davfs2）
-scripts/       # 包装脚本（POSIX `minas-webdav`）+ 挂盘/清理脚本（Windows .ps1）
-docs/          # ENVIRONMENT.md / webdav-surface.md 实测结论
+scripts/       # 包装脚本（POSIX `minas-webdav`）+ 证书取回（Linux）+ 挂盘/清理脚本（Windows .ps1）
+docs/          # ENVIRONMENT.md / webdav-surface.md 实测结论 / CERT-REFRESH.md 证书取回
 ```
 
 ## 协议要点（详见 [docs/webdav-surface.md](docs/webdav-surface.md)）
