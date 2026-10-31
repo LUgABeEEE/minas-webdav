@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
 ### Added
 
 - **Linux / macOS support.** The CLI, `probe` and `proxy` only use the standard
@@ -29,9 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `MINAS_PUT_VERIFY=size` (skip the download) or `off`.
 - `tests/test_safe_put.py`: offline tests pinning the temp-name/`MOVE`/verify
   contract, the `DELETE`+`PUT` fallback and the failure modes.
-
-### Added
-
 - `scripts/minas-cert-refresh.sh`: a Linux-only helper for the mTLS certificate
   this device requires (~21 days, issued only by the official client). It reads
   a staging directory, validates the bundle against its `manifest.json`
@@ -42,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/CERT-REFRESH.md`: the producer contract (bundle layout + manifest),
   configuration reference, a systemd `service` + `timer` example and a
   troubleshooting table.
+- README: a 「证书过期怎么办（Linux）」 section that points at the helper, plus a
+  pointer from the prerequisite list.
 
 ### Fixed
 
@@ -144,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.1...v0.1.2
