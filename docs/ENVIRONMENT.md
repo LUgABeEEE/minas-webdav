@@ -44,7 +44,7 @@ python3 -m venv .venv
 | HTTP 服务 | `nginx/1.24.0`（:5000 WebDAV 与 :443 管理接口同栈） |
 | 管理接口 | LuCI on **Lua 5.1**（错误栈可见 `NasStorage.lua`），`/cgi-bin/luci/...` |
 | WebDAV | HTTPS **:5000**；`DAV: 1,2`；`Allow: GET,HEAD,PUT,DELETE,MKCOL,COPY,MOVE,PROPFIND,OPTIONS,LOCK,UNLOCK` |
-| 认证 | Basic（账密）；无认证返回 451；mTLS 可选。**Host/SNI 必须用设备 CN** |
+| 认证 | WebDAV :5000 只需 Basic 账密（无认证 → 451；**不需要客户端证书**）；:443 的 LuCI 池信息 API 才要 mTLS（无证书 → 400）。**Host/SNI 必须用设备 CN** |
 | 存储池 | `pool_type=cfs`；数据根 `/pool0/data` |
 | 只读自检 | `python -m minas_webdav probe`（读写全链路 + 锁） |
 

@@ -50,7 +50,8 @@ def _init() -> None:
         UP_CN = resolve_server_cn(UP_HOST, UP_PORT)
         os.environ["MINAS_CN"] = UP_CN
     TOKEN = base64.b64encode(f"{UP_USER}:{UP_PASS}".encode()).decode()
-    # Upstream requires mTLS; a bare context gets HTTP 451.
+    # Present the client cert when it exists (needed by the LuCI pool API, not
+    # by WebDAV itself — measured 2026-11-01).
     _ctx = client_ctx()
 
 HOP = {

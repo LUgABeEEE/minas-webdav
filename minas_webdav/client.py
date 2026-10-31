@@ -101,10 +101,12 @@ def resolve_server_cn(ip: str, port: int) -> str:
 def client_ctx() -> ssl.SSLContext:
     """TLS context for talking to the device, with mTLS when a cert trio exists.
 
-    The device answers **HTTP 451** to requests that carry no client
-    certificate, so every code path must use this. `probe` and `proxy` used to
-    build a bare unverified context and could therefore never work against a
-    real device.
+    Measured 2026-11-01 against the live device: the **WebDAV** endpoint (:5000)
+    answers 207 with Basic auth alone — no client certificate required, even
+    with CA verification off. Its 451 is the *missing Basic auth* response, not
+    a missing client certificate. The client cert is only required by the LuCI
+    pool-info API on :443 (no cert → HTTP 400), which `df` and credential
+    auto-discovery use — so we still present it whenever it exists.
     """
     certs = find_certs()
     if certs:

@@ -3,9 +3,11 @@
 # minas-cert-refresh.sh — collect and install a rotated MINAS WebDAV certificate
 #
 # Why this exists:
-#   The device answers 451 to requests without a client certificate. The
-#   certificate is issued by the official Xiaomi Smart Storage desktop client,
-#   lives only on the machine running that client, and expires in ~21 days.
+#   The device's LuCI pool API (:443, used by `df` and credential discovery)
+#   rejects requests that carry no client certificate (HTTP 400); the WebDAV
+#   file endpoint (:5000) does not need it at all. The certificate is issued by
+#   the official Xiaomi Smart Storage desktop client, lives only on the machine
+#   running that client, and expires in ~21 days.
 #   There is no manual renewal: the client rotates the triple only once the
 #   current certificate has expired, and nothing can trigger it earlier. So a
 #   Linux box can only *collect* a bundle produced after that rotation, verify
@@ -355,7 +357,7 @@ install_bundle() {
     if [ -n "$VERIFY_CMD" ]; then
       vout=$(cd "$TOOL_HOME" && sh -c "$VERIFY_CMD" 2>&1); vrc=$?
     else
-      vout=$(cd "$TOOL_HOME" && timeout 90 "$PY" -m minas_webdav ls /pool0/data 2>&1); vrc=$?
+      vout=$(cd "$TOOL_HOME" && timeout 90 "$PY" -m minas_webdav df 2>&1); vrc=$?
     fi
     if [ "$vrc" -ne 0 ]; then
       warn "post-install check failed; bundle kept for inspection"

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-01
+
+### Fixed
+
+- **Verified against the live device (2026-11-01): the WebDAV endpoint does not
+  need the client certificate.** `PROPFIND /pool0/data` on `:5000` returns 207
+  with Basic auth alone — also with CA verification disabled — and the `451` is
+  the *missing Basic auth* response, not a missing certificate. The client cert
+  is only required by the LuCI pool-info API on `:443` (`df` / credential
+  discovery), which answers **HTTP 400** without it and 200 with it.
+  `docs/webdav-surface.md` (and its skill copy), `docs/CERT-REFRESH.md`,
+  `docs/ENVIRONMENT.md`, README, the skill troubleshooting table and the
+  `client_ctx` / `proxy` / `probe` comments now state that instead.
+- `scripts/minas-cert-refresh.sh`: the post-install live check now runs
+  `python3 -m minas_webdav df` — the mTLS-only path. The previous `ls` check
+  only proved that Basic auth worked, so a broken or expired certificate would
+  have passed verification.
+
+### Changed
+
+- npm bundle `dsh-minas-webdav` bumped to 0.3.1 to track the CLI release
+  (bundle content unchanged since 0.1.1) and published from the `dsh-v0.3.1`
+  tag.
+
 ## [0.3.0] - 2026-11-01
 
 ### Added
@@ -190,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.3...v0.1.4

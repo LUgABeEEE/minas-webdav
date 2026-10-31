@@ -13,8 +13,8 @@
 |---|---|
 | `OPTIONS` | 200；`DAV: 1,2`；`Allow: GET,HEAD,PUT,DELETE,MKCOL,COPY,MOVE,PROPFIND,OPTIONS,LOCK,UNLOCK` |
 | Basic 认证 | `PROPFIND` → 207 ✓（账密来自 `get_pool_info` 或 credentials.env） |
-| 无认证 | → **451**（设备上锁） |
-| mTLS | 可选；证书 `%LOCALAPPDATA%\minasCert\`（cert/key/ca_chain） |
+| 无认证 | → **451**（缺的是 Basic 认证，不是客户端证书） |
+| mTLS | **WebDAV 不需要**：不带客户端证书、甚至 CA 不校验也照样 207（2026-11-01 实测 A/B/C 三组均 207）；证书只对 :443 的 LuCI 池信息 API 必需 |
 | Host/SNI | 必须为设备 CN（`nas.<uid>.<hash>.0`）；MKCOL 返回的 `Location` 头也用 CN 形式 |
 
 ### 读
@@ -54,17 +54,19 @@
 - **`Destination` 头必须先编码**：header 值对 `http.client` 是 latin-1，裸中文会抛
   `UnicodeEncodeError`（本项目已修复：`dest_header()` → `enc_path(norm(...))`）。
 
-### 机密发现（LuCI，配合 mTLS）
+### 机密发现（LuCI，:443，**mTLS 必需**）
 
 - `POST /cgi-bin/luci/filemgr/get_pool_info`（`:443` 或本机隧道 `127.0.0.1:51087`）
   返回 `data.webDAV.username/password` 与 `data.internal_pool`（`df` 命令数据源）。
+- 2026-11-01 实测：**带客户端证书 → 200；不带 → HTTP 400**（TLS 握手本身能过，
+  是请求被拒）。所以 `df` / 自动发现依赖那张 21 天证书，WebDAV 文件操作不依赖。
 
 ## 2. 推测（未验证，仅供参考）
 
 | 观察 | 推测 |
 |---|---|
 | `Depth: infinity` 403 | nginx `dav_ext` 模块默认 `dav_methods` 限制或厂商主动关闭，防全盘遍历 |
-| 451 状态码 | nginx 用 451 表示"需认证"是小米定制，非标准 401/403 |
+| 451 状态码 | 实测：不带 `Authorization` 头即 451（缺 Basic 认证）；nginx 用 451 而不是 401/403 是小米定制 |
 | 锁删除后残留 | 锁表按路径 key 存储、与 inode 脱钩；也可能是实现简化 |
 | 目录 GET 出 HTML 索引 | nginx `autoindex` 对 WebDAV collection 生效，非 WebDAV 特性 |
 | PUT 204 而非 201 | 服务端对新建/覆盖统一回 204，不区分（RFC 允许） |
@@ -74,7 +76,7 @@
 | | Samba（445） | WebDAV（5000，本项目） |
 |---|---|---|
 | 范围 | 仅官方发布的共享（现仅 Z: 备份） | `/pool0/data` 全池 |
-| 认证 | Windows SMB 会话 | Basic（+可选 mTLS） |
+| 认证 | Windows SMB 会话 | Basic（不需要 mTLS） |
 | 用途 | 资源管理器 / 备份 | agent 自动化、远程、挂 N 盘 |
 
 两者独立，不要混用路径语法（UNC ≠ WebDAV 路径）。

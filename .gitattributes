@@ -1,0 +1,6 @@
+# Normalise line endings in the repository; keep scripts runnable on both sides.
+* text=auto
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf

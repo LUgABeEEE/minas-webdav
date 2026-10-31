@@ -79,7 +79,8 @@ Set-Location $home
 
 | 现象 | 处理 |
 |---|---|
-| 451 | 凭据缺失 → 检查 `credentials.env`；保持官方客户端登录 |
+| 451 | 缺 Basic 账密（不是缺证书）→ 检查 `credentials.env` / `MINAS_USER`+`MINAS_PASS` |
+| `df` 报 400 / 证书错误 | :443 的 LuCI 池信息 API 要客户端证书：证书缺失或已过期（**不能手动续签**，等客户端到期后自动换发） |
 | 423 Locked | 路径锁（文件删除后仍存活 ≤60s）；等约 1 分钟或换路径重试 |
 | 403（PROPFIND） | `Depth: infinity` 被拒，必须 `Depth: 1` 逐层（CLI 已处理） |
 | MOVE/COPY 400 | Destination 必须是编码纯路径；**用 CLI，勿手拼** |

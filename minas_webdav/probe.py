@@ -56,7 +56,7 @@ def run(argv: list[str] | None = None) -> int:
         headers.setdefault("Connection", "close")
         if depth is not None:
             headers["Depth"] = str(depth)
-        ctx = client_ctx()   # carries the client cert; a bare context gets HTTP 451
+        ctx = client_ctx()   # presents the client cert when present (WebDAV needs only Basic auth)
         sock = socket.create_connection((host, port), timeout=20)
         ssock = ctx.wrap_socket(sock, server_hostname=cn)
         conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=20)

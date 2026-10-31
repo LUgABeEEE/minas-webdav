@@ -12,9 +12,11 @@ DSH 就会把小米智能存储（MINAS）的 MCP server 注册成一行 stdio �
 pipx install 'minas-webdav[mcp]'   # 提供 minas-webdav-mcp 命令
 ```
 
-一次性准备（与直接用 MCP server 相同）：官方客户端导出的 mTLS 证书放进 `~/.dsh/minasCert`，
-`MINAS_USER` / `MINAS_PASS` 写进 `~/.dsh/minasCred/credentials.env`。路径可用
-`MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖。**这个包里没有任何凭据。**
+一次性准备（与直接用 MCP server 相同）：`MINAS_USER` / `MINAS_PASS` 写进
+`~/.dsh/minasCred/credentials.env`——**WebDAV 文件操作只要这个**。官方客户端导出的 mTLS 证书
+放进 `~/.dsh/minasCert` 只对 `nas_df`（以及凭据自动发现）这一类走 `:443` LuCI API 的调用必需，
+不带证书时那条路会返回 400。路径可用 `MINAS_CERT_HOME` / `MINAS_CRED_FILE` 覆盖。
+**这个包里没有任何凭据。**
 
 ## 再装这个插件
 

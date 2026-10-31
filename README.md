@@ -158,7 +158,9 @@ tests/         # 离线单测：paths / safe_put / commands / mcp / 文档副本
 - `Host`/SNI 必须用**设备 CN**（`nas.<uid>.<hash>`），不能裸用 IP
 - `PROPFIND Depth: infinity` 被拒（403），递归必须逐层 `Depth: 1`
 - `MOVE`/`COPY` 的 `Destination` 用**百分号编码的纯路径**；IP 形式的 URL 会 400
-- 无认证访问返回 451；Basic 即可，mTLS 可选
+- 无认证访问返回 451——那是**缺账密**，不是缺客户端证书
+- **WebDAV（:5000）不需要 mTLS**：只带 Basic 账密就能 207（2026-11-01 实测）
+- 客户端证书只有 :443 的 LuCI 池信息 API（`df` / 凭据自动发现）才必需：不带 → 400
 
 ## 已知问题：PUT 覆盖已存在的文件**不截断**（2026-10-15 定位并规避）
 

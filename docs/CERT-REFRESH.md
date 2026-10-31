@@ -1,6 +1,8 @@
 # 证书到期后的取回与安装（Linux）
 
-设备的 WebDAV 端点要求 **mTLS 客户端证书**：不带证书的请求一律 `451`。这张证书有两条绕不开的约束：
+设备的 **LuCI 池信息 API**（`:443` 的 `/cgi-bin/luci/filemgr/get_pool_info`，`df` 和凭据自动发现的数据源）要求 **mTLS 客户端证书**：带证书 → 200，不带 → HTTP 400（2026-11-01 实测）。WebDAV 文件面（`:5000`）**不需要**这张证书，Basic 账密就够了；那边的 `451` 表示缺账密，与证书无关。
+
+这张证书有两条绕不开的约束：
 
 1. **只能由小米智能存储的官方桌面客户端签发**，且只存在于运行该客户端的机器上；
 2. **有效期约 21 天，而且不能手动刷新**——续签只会在证书**到期后**由官方客户端自动完成，无法提前触发，也没有任何接口可以催它换发。
@@ -74,7 +76,8 @@ MINAS_NOTIFY_CMD=/usr/local/bin/notify-me ./scripts/minas-cert-refresh.sh --test
 2. 复制到 `mktemp -d` 的 `0700` 目录 —— 只复制 `*.pem` / `credentials.env` / `manifest.json`
 3. 按 `manifest.json` 逐个比对 sha256，任何不一致就中止
 4. `install -m 600` 到证书目录，旧文件自动留 `.bak-<时间戳>`
-5. 用新证书跑一次 `python3 -m minas_webdav ls /pool0/data`；失败则回滚式中止并保留中转包
+5. 用新证书跑一次 `python3 -m minas_webdav df`（**走 :443 的 LuCI API——那才是需要这张证书的通道**；
+   用 `ls` 验证没有意义，WebDAV 只认账密）；失败则回滚式中止并保留中转包
 6. 通过后 `shred` 临时私钥、删除中转包
 7. 状态写入 `status.json`（`state` / `days_left` / `expires_on` / `staged_bundle`）
 
@@ -91,7 +94,7 @@ MINAS_NOTIFY_CMD=/usr/local/bin/notify-me ./scripts/minas-cert-refresh.sh --test
 | `--notify CMD` | `MINAS_NOTIFY_CMD` | 无（只打印） | 告警命令；文本同时作为 `$1` 与 stdin 传入 |
 | — | `MINAS_PYTHON` | `python3` | 解释器 |
 | — | `MINAS_WEBDAV_HOME` | 本脚本所在目录的上级 | 安装后自检用的仓库根 |
-| — | `MINAS_VERIFY_CMD` | `python3 -m minas_webdav ls /pool0/data` | 覆盖自检命令 |
+| — | `MINAS_VERIFY_CMD` | `python3 -m minas_webdav df` | 覆盖自检命令（必须走 :443 的 mTLS 通道，`ls` 只验证账密） |
 
 退出码：`0` 健康/刚装好新证书 · `10` 即将到期 · `11` 已过期或缺失 · `12` 安装新证书失败 · `1` 参数或内部错误。
 
@@ -157,4 +160,4 @@ sudo systemctl enable --now minas-cert-refresh.timer
 
 - 只在 Linux 上验证过（GNU coreutils + systemd）；macOS 上 `date -d`/`shred` 语义不同，未做适配。
 - **脚本不会也无法续签证书**——它只搬运和验证。续签只在证书到期后由官方客户端自动换发，既不能手动触发、也不能提前做；脚本能做的只是「发现新包 → 装好 → 到期前喊人」。
-- 到期后到客户端换发之间会有一段不可用窗口（那段时间 CLI 会报 451/证书错误），这是设备行为，不是脚本的问题。
+- 到期后到客户端换发之间会有一段不可用窗口：那段时间 **`df` / 凭据自动发现会失败**（LuCI API 拒绝无证书请求），但 `ls` / `get` / `put` 等 WebDAV 文件操作照常可用（只要 credentials.env 里有账密）。这是设备行为，不是脚本的问题。
