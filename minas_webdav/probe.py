@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Probe Xiaomi NAS WebDAV capability surface (read + write round-trip).
 
 Usage: python -m minas_webdav probe

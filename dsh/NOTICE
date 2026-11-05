@@ -1,0 +1,12 @@
+minas-webdav
+Copyright 2026 g1394
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+Xiaomi, MiMo, MINAS and related marks are trademarks of their respective
+owners. This project is an independent toolkit and is not affiliated with
+or endorsed by Xiaomi.
+
+This copy ships inside the npm bundle (dsh-minas-webdav) so the attribution
+travels with the published package, as Apache-2.0 section 4(d) requires.

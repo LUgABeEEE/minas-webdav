@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """PROPFIND multistatus parsing (namespace-prefix agnostic)."""
 
 from __future__ import annotations

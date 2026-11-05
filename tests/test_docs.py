@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Keep the packaged skill copy and the repo documentation from drifting apart.
 
 `skill/references/webdav-surface.md` is shipped inside the agent skill, while

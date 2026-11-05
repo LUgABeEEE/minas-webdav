@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """MCP server: expose minas-webdav as structured tools over stdio.
 
 Usage:

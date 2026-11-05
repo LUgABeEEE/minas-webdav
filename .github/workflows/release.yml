@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Release
 
 # Publishing uses PyPI Trusted Publishing (OIDC): no API token is stored anywhere.

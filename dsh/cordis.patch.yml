@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 # dsh-minas-webdav — bundle patch
 #
 # Registers the minas-webdav MCP server as one stdio row. The Python package

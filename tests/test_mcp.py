@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Smoke tests for the MCP server surface.
 
 The MCP server lives behind the optional ``[mcp]`` extra, so this module is

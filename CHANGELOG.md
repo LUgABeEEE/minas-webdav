@@ -7,25 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-05
+
 ### Added
 
+- `dsh/NOTICE` now ships in the npm bundle (`files` gained `NOTICE`). Apache-2.0
+  section 4(d) requires the attribution notices to travel with a distributed
+  derivative work; the PyPI sdist and wheel already carried `LICENSE` + `NOTICE`.
 - CI: a `coverage` job runs the suite under `coverage.py` and fails below 46%
-  (measured baseline 47% on the Linux runner, 2026-11-05) — a ratchet, to be raised as real tests
-  land.
-- CI: a `ci-ok` aggregate job exists so branch protection can require one stable
-  context instead of the interpreter-specific matrix names. `master` now
+  (measured baseline 47% on the Linux runner, 2026-11-05) — a ratchet, to be
+  raised as real tests land.
+- CI: a `ci-ok` aggregate job so branch protection can require one stable
+  context instead of the interpreter-specific matrix names; `master` now
   requires `ci-ok` on pull requests.
 
 ### Changed
 
-- `dsh/package.json` is 0.3.3 and its README states the bundle version follows
-  the CLI version (the bundle is configuration only, so an unchanged bundle is
-  still republished with a new CLI patch).
+- `# SPDX-License-Identifier: Apache-2.0` on every Python module and workflow
+  file (was 0/19 modules and 1/5 workflows), so licence scanners and GitHub's
+  licence detection agree with the `LICENSE`/`NOTICE` files.
+- The `NOTICE` copyright holder is `g1394` in both repositories (`minas-skill`
+  said `missfor100`); one holder name keeps future relicensing or transfer
+  straightforward.
 - `config.verified_ctx()` is now the single place that builds a CA-verified
   device context (TLS 1.2 floor included); `client.py` previously repeated
   `ssl.create_default_context(cafile=ca)` + `check_hostname = False` in three
   places, which is also what kept the remaining `py/insecure-protocol` alerts
   alive.
+- `dsh/package.json` is 0.3.4, following the CLI version as documented in
+  `dsh/README.md`.
 
 ## [0.3.3] - 2026-11-05
 
@@ -273,7 +283,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...v0.3.1

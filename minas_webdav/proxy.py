@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Local WebDAV reverse proxy for Xiaomi Smart Storage (MINAS).
 http://127.0.0.1:8899 -> https://<nas>:5000 with Basic auth.
 

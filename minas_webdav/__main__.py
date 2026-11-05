@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Entry point: python -m minas_webdav [probe|proxy|<cli-command>] ..."""
 
 import sys

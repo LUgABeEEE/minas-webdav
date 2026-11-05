@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Smoke tests: the package imports, the CLI is wired up, and the
 example config parses — no NAS, no network, no credentials."""
 

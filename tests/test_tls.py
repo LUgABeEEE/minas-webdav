@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The device TLS contexts must keep a modern protocol floor.
 
 Verification is intentionally off for this LAN appliance (the chain is trusted

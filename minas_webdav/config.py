@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Central config loader for minas-webdav.
 
 Non-secret settings (host/port/cn/certs): ``minas_config.json`` next to this

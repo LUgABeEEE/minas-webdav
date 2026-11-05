@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Offline tests for ``cli.safe_put()`` — the workaround for MINAS' non-truncating PUT.
 
 The device does **not** truncate when a PUT overwrites an existing resource: the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Path helpers: DAV path normalisation, size formatting, data-root sandbox."""
 
 from __future__ import annotations

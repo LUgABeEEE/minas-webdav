@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Tests for the loopback reverse proxy's request handling.
 
 The interesting logic is pure (target sanitising, Destination rewriting,

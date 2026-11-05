@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """MINAS WebDAV CLI for agent file ops on Xiaomi Smart Storage.
 
 No drive-letter mount required. Talks to the device WebDAV API directly.

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Connection layer: mTLS context, device CN discovery, WebDAV client."""
 
 from __future__ import annotations

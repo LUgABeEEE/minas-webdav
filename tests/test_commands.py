@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Offline tests for the CLI command layer.
 
 The command handlers only touch the ``MinasWebDAV`` client interface
