@@ -44,7 +44,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install ruff
-      - run: ruff check .
+      - name: lint
+        run: ruff check .
+      - name: format
+        run: ruff format --check .
 
   audit:
     name: dependency audit

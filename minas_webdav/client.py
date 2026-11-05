@@ -1,4 +1,5 @@
 """Connection layer: mTLS context, device CN discovery, WebDAV client."""
+
 from __future__ import annotations
 
 import base64
@@ -22,6 +23,7 @@ DEFAULT_WEBDAV_PORT = int(os.environ.get("MINAS_PORT", "5000"))
 # relative-path fallback when LOCALAPPDATA was unset.
 CERT_HOME = _mconf.default_cert_home()
 
+
 def _cn_from_der(der: bytes) -> str:
     """Subject CN of a DER certificate, cross-platform.
 
@@ -33,9 +35,7 @@ def _cn_from_der(der: bytes) -> str:
         from cryptography import x509  # type: ignore
         from cryptography.x509.oid import NameOID  # type: ignore
 
-        attrs = x509.load_der_x509_certificate(der).subject.get_attributes_for_oid(
-            NameOID.COMMON_NAME
-        )
+        attrs = x509.load_der_x509_certificate(der).subject.get_attributes_for_oid(NameOID.COMMON_NAME)
         if attrs:
             return str(attrs[0].value).strip()
     except Exception:
@@ -51,7 +51,9 @@ def _cn_from_der(der: bytes) -> str:
         try:
             out = subprocess.run(
                 ["openssl", "x509", "-inform", "DER", "-in", path, "-noout", "-subject"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             m = re.search(r"CN\s*=\s*([^,/\n]+)", out.stdout or "")
             if m:
@@ -67,14 +69,14 @@ def _cn_from_der(der: bytes) -> str:
 
         tmp = Path(tempfile.gettempdir()) / "minas_peer.cer"
         tmp.write_bytes(der)
-        out = subprocess.check_output(["certutil", "-dump", str(tmp)],
-                                      stderr=subprocess.STDOUT)
+        out = subprocess.check_output(["certutil", "-dump", str(tmp)], stderr=subprocess.STDOUT)
         m = re.search(r"CN=([^,\r\n]+)", out.decode("utf-8", "replace"))
         if m:
             return m.group(1).strip()
     except Exception:
         pass
     return ""
+
 
 def find_certs() -> tuple[str, str, str] | None:
     if not CERT_HOME.exists():
@@ -116,6 +118,7 @@ def client_ctx() -> ssl.SSLContext:
         ctx.check_hostname = False
         return ctx
     return _mconf.unverified_ctx()
+
 
 class MinasWebDAV:
     def __init__(self, ip: str = DEFAULT_NAS_IP, port: int = DEFAULT_WEBDAV_PORT):

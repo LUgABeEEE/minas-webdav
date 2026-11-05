@@ -2,6 +2,7 @@
 
 Usage: python -m minas_webdav probe
 """
+
 from __future__ import annotations
 
 import base64
@@ -37,16 +38,21 @@ def run(argv: list[str] | None = None) -> int:
             cn = resolve_server_cn(host, port)
             os.environ["MINAS_CN"] = cn
         except Exception as e:
-            print(f"cannot resolve device CN ({type(e).__name__}: {e}); "
-                  "set `cn` in minas_config.json or MINAS_CN", file=sys.stderr)
+            print(
+                f"cannot resolve device CN ({type(e).__name__}: {e}); set `cn` in minas_config.json or MINAS_CN",
+                file=sys.stderr,
+            )
             return 3
     token = base64.b64encode(f"{user}:{password}".encode()).decode()
     # Single source of truth for the cert trio (it enforces the <prefix> pairing).
     certs = find_certs()
     if not certs:
-        print(f"no client certs under {_mconf.default_cert_home()}; login the official "
-              "client first and/or copy the mTLS trio (*_cert.pem, *_private_key.pem, "
-              "ca_chain.pem) there", file=sys.stderr)
+        print(
+            f"no client certs under {_mconf.default_cert_home()}; login the official "
+            "client first and/or copy the mTLS trio (*_cert.pem, *_private_key.pem, "
+            "ca_chain.pem) there",
+            file=sys.stderr,
+        )
         return 3
 
     def req(method, path, body=None, headers=None, depth=None):
@@ -56,7 +62,7 @@ def run(argv: list[str] | None = None) -> int:
         headers.setdefault("Connection", "close")
         if depth is not None:
             headers["Depth"] = str(depth)
-        ctx = client_ctx()   # presents the client cert when present (WebDAV needs only Basic auth)
+        ctx = client_ctx()  # presents the client cert when present (WebDAV needs only Basic auth)
         sock = socket.create_connection((host, port), timeout=20)
         ssock = ctx.wrap_socket(sock, server_hostname=cn)
         conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=20)
@@ -76,8 +82,16 @@ def run(argv: list[str] | None = None) -> int:
             k: v
             for k, v in hdrs.items()
             if k.lower()
-            in ("dav", "ms-author-via", "allow", "content-type", "content-length",
-                "location", "www-authenticate", "x-request-id")
+            in (
+                "dav",
+                "ms-author-via",
+                "allow",
+                "content-type",
+                "content-length",
+                "location",
+                "www-authenticate",
+                "x-request-id",
+            )
         }
         if interesting:
             print("  hdrs:", interesting)
@@ -104,7 +118,8 @@ def run(argv: list[str] | None = None) -> int:
     )
     for dep in ("0", "1", "infinity"):
         st, h, d = req(
-            "PROPFIND", root + "/",
+            "PROPFIND",
+            root + "/",
             body=propfind_body,
             headers={"Content-Type": "application/xml"},
             depth=dep,
@@ -128,18 +143,21 @@ def run(argv: list[str] | None = None) -> int:
     show("MKCOL", st, h, d, n=80)
     # MOVE/COPY: path-only Destination (IP-in-URL returns 400 on this device)
     st, h, d = req(
-        "MOVE", probe_file,
+        "MOVE",
+        probe_file,
         headers={"Destination": enc(moved_path), "Overwrite": "T"},
     )
     show("MOVE (path-only Destination)", st, h, d, n=120)
     st, h, d = req(
-        "COPY", moved_path,
+        "COPY",
+        moved_path,
         headers={"Destination": enc(copied_path)},
     )
     show("COPY (path-only Destination)", st, h, d, n=80)
     # also record what an IP-URL Destination does, for reference
     st, h, d = req(
-        "COPY", moved_path,
+        "COPY",
+        moved_path,
         headers={"Destination": f"https://{host}:{port}{probe_dir}ip_dst.txt"},
     )
     show("COPY (IP-URL Destination, expect 400)", st, h, d, n=80)
@@ -152,10 +170,11 @@ def run(argv: list[str] | None = None) -> int:
     lock_body = (
         b'<?xml version="1.0"?><d:lockinfo xmlns:d="DAV:">'
         b"<d:lockscope><d:exclusive/></d:lockscope>"
-        b'<d:locktype><d:write/></d:locktype><d:owner>agent</d:owner></d:lockinfo>'
+        b"<d:locktype><d:write/></d:locktype><d:owner>agent</d:owner></d:lockinfo>"
     )
     st, h, d = req(
-        "LOCK", moved_path,
+        "LOCK",
+        moved_path,
         body=lock_body,
         headers={"Content-Type": "application/xml", "Timeout": "Second-60"},
     )
@@ -166,7 +185,8 @@ def run(argv: list[str] | None = None) -> int:
         m = re.search(r"<[Dd]:locktoken>\s*<[Dd]:href>(.*?)</[Dd]:href>", text)
         if m:
             st, h, d = req(
-                "UNLOCK", moved_path,
+                "UNLOCK",
+                moved_path,
                 headers={"Lock-Token": "<" + m.group(1).strip() + ">"},
             )
             show("UNLOCK", st, h, d, n=80)
@@ -190,13 +210,14 @@ def run(argv: list[str] | None = None) -> int:
             headers = {"Host": cn, "Connection": "close"}
             if use_auth:
                 headers["Authorization"] = "Basic " + token
-            ctx = client_ctx()   # auth recap must run over the mTLS channel too
+            ctx = client_ctx()  # auth recap must run over the mTLS channel too
             sock = socket.create_connection((host, port), timeout=10)
             ssock = ctx.wrap_socket(sock, server_hostname=cn)
             c = http.client.HTTPSConnection(host, port, context=ctx, timeout=10)
             c.sock = ssock
             c.request(
-                "PROPFIND", root + "/",
+                "PROPFIND",
+                root + "/",
                 body=propfind_body,
                 headers={**headers, "Depth": "0", "Content-Type": "application/xml"},
             )

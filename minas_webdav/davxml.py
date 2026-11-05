@@ -1,4 +1,5 @@
 """PROPFIND multistatus parsing (namespace-prefix agnostic)."""
+
 from __future__ import annotations
 
 import re

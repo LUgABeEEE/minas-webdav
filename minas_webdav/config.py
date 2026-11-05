@@ -22,6 +22,7 @@ client writes them to ``%LOCALAPPDATA%\\minasCert``; elsewhere point
 
 Environment variables already set always win (setdefault semantics).
 """
+
 from __future__ import annotations
 
 import json
@@ -44,6 +45,7 @@ def unverified_ctx() -> ssl.SSLContext:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
 
 # ``%NAME%`` style variables are expanded by os.path.expandvars on Windows only.
 # Do it ourselves so a Windows-flavoured config still resolves on POSIX.
@@ -86,9 +88,7 @@ def default_cred_path() -> Path:
 
 
 CONFIG_PATH = Path(
-    _expand(os.environ["MINAS_CONFIG"])
-    if os.environ.get("MINAS_CONFIG")
-    else PACKAGE_DIR / "minas_config.json"
+    _expand(os.environ["MINAS_CONFIG"]) if os.environ.get("MINAS_CONFIG") else PACKAGE_DIR / "minas_config.json"
 )
 CRED_PATH = default_cred_path()
 

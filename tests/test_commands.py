@@ -22,8 +22,7 @@ from minas_webdav import cli
 DATA = "/pool0/data"
 
 
-def item(path: str, name: str | None = None, size: int = 0, is_dir: bool = False,
-         modified: str = "") -> dict:
+def item(path: str, name: str | None = None, size: int = 0, is_dir: bool = False, modified: str = "") -> dict:
     return {
         "path": path,
         "name": name if name is not None else path.rstrip("/").split("/")[-1],
@@ -36,8 +35,7 @@ def item(path: str, name: str | None = None, size: int = 0, is_dir: bool = False
 class FakeClient:
     """Stand-in for :class:`minas_webdav.cli.MinasWebDAV`."""
 
-    def __init__(self, tree: dict | None = None, replies: dict | None = None,
-                 pool: list | None = None):
+    def __init__(self, tree: dict | None = None, replies: dict | None = None, pool: list | None = None):
         self.tree = tree or {}
         self.replies = replies or {}
         self.pool = pool if pool is not None else []
@@ -55,10 +53,10 @@ class FakeClient:
             return [dict(entries[0])]
         return [dict(x) for x in entries]
 
-    def request(self, method: str, path: str, body=None, headers=None,
-                with_mtls: bool = False):
+    def request(self, method: str, path: str, body=None, headers=None, with_mtls: bool = False):
         self.calls.append((method, path, dict(headers or {})))
         return self.replies.get((method, path), (200, {}, b""))
+
     def discover(self):
         self.calls.append(("DISCOVER", "", ""))
         return {"data": {"internal_pool": self.pool}}
@@ -80,49 +78,49 @@ def run(func, client, **kwargs):
 
 class TestLs(unittest.TestCase):
     def setUp(self):
-        self.client = FakeClient(tree={
-            DATA: [
-                item(DATA, name="data", is_dir=True),
-                item(f"{DATA}/video", name="video", is_dir=True),
-                item(f"{DATA}/a.txt", name="a.txt", size=100),
-            ],
-            f"{DATA}/video": [item(f"{DATA}/video", name="video", is_dir=True)],
-        })
+        self.client = FakeClient(
+            tree={
+                DATA: [
+                    item(DATA, name="data", is_dir=True),
+                    item(f"{DATA}/video", name="video", is_dir=True),
+                    item(f"{DATA}/a.txt", name="a.txt", size=100),
+                ],
+                f"{DATA}/video": [item(f"{DATA}/video", name="video", is_dir=True)],
+            }
+        )
 
     def test_json_drops_self_and_sorts_dirs_first(self):
-        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=True,
-                      self_only=False, long=True)
+        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=True, self_only=False, long=True)
         self.assertEqual(rc, 0)
         names = [row["name"] for row in json.loads(out)]
         self.assertEqual(names, ["video", "a.txt"])
 
     def test_text_output_marks_dirs(self):
-        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=False,
-                      self_only=False, long=True)
+        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=False, self_only=False, long=True)
         self.assertEqual(rc, 0)
         self.assertIn("d ", out)
         self.assertIn("video", out)
         self.assertIn("a.txt", out)
 
     def test_self_only_keeps_the_entry(self):
-        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=True,
-                      self_only=True, long=True)
+        rc, out = run(cli.cmd_ls, self.client, path=DATA, json=True, self_only=True, long=True)
         self.assertEqual(rc, 0)
         self.assertEqual([row["name"] for row in json.loads(out)], ["data"])
         # depth "0" must be requested for --self-only
         self.assertIn(("PROPFIND", DATA, "0"), self.client.calls)
 
     def test_missing_directory_is_not_found(self):
-        rc, _ = run(cli.cmd_ls, self.client, path=f"{DATA}/nope", json=False,
-                    self_only=False, long=True)
+        rc, _ = run(cli.cmd_ls, self.client, path=f"{DATA}/nope", json=False, self_only=False, long=True)
         self.assertEqual(rc, 2)
 
 
 class TestStat(unittest.TestCase):
     def setUp(self):
-        self.client = FakeClient(tree={
-            f"{DATA}/a.txt": [item(f"{DATA}/a.txt", size=1234, modified="Wed")],
-        })
+        self.client = FakeClient(
+            tree={
+                f"{DATA}/a.txt": [item(f"{DATA}/a.txt", size=1234, modified="Wed")],
+            }
+        )
 
     def test_json(self):
         rc, out = run(cli.cmd_stat, self.client, path=f"{DATA}/a.txt", json=True)
@@ -143,18 +141,20 @@ class TestStat(unittest.TestCase):
 
 class TestDu(unittest.TestCase):
     def setUp(self):
-        self.client = FakeClient(tree={
-            DATA: [
-                item(DATA, name="data", is_dir=True),
-                item(f"{DATA}/docs", name="docs", is_dir=True),
-                item(f"{DATA}/a.txt", name="a.txt", size=100),
-            ],
-            f"{DATA}/docs": [
-                item(f"{DATA}/docs", name="docs", is_dir=True),
-                item(f"{DATA}/docs/x.bin", name="x.bin", size=2048),
-                item(f"{DATA}/docs/y.bin", name="y.bin", size=2000),
-            ],
-        })
+        self.client = FakeClient(
+            tree={
+                DATA: [
+                    item(DATA, name="data", is_dir=True),
+                    item(f"{DATA}/docs", name="docs", is_dir=True),
+                    item(f"{DATA}/a.txt", name="a.txt", size=100),
+                ],
+                f"{DATA}/docs": [
+                    item(f"{DATA}/docs", name="docs", is_dir=True),
+                    item(f"{DATA}/docs/x.bin", name="x.bin", size=2048),
+                    item(f"{DATA}/docs/y.bin", name="y.bin", size=2000),
+                ],
+            }
+        )
 
     def test_json_totals(self):
         rc, out = run(cli.cmd_du, self.client, path=DATA, max_depth=2, json=True)
@@ -172,43 +172,47 @@ class TestDu(unittest.TestCase):
 
 class TestFind(unittest.TestCase):
     def setUp(self):
-        self.client = FakeClient(tree={
-            DATA: [
-                item(DATA, name="data", is_dir=True),
-                item(f"{DATA}/movie.mp4", name="movie.mp4", size=10),
-                item(f"{DATA}/notes.txt", name="notes.txt", size=5),
-                item(f"{DATA}/sub", name="sub", is_dir=True),
-            ],
-            f"{DATA}/sub": [
-                item(f"{DATA}/sub", name="sub", is_dir=True),
-                item(f"{DATA}/sub/deep.mp4", name="deep.mp4", size=7),
-            ],
-        })
+        self.client = FakeClient(
+            tree={
+                DATA: [
+                    item(DATA, name="data", is_dir=True),
+                    item(f"{DATA}/movie.mp4", name="movie.mp4", size=10),
+                    item(f"{DATA}/notes.txt", name="notes.txt", size=5),
+                    item(f"{DATA}/sub", name="sub", is_dir=True),
+                ],
+                f"{DATA}/sub": [
+                    item(f"{DATA}/sub", name="sub", is_dir=True),
+                    item(f"{DATA}/sub/deep.mp4", name="deep.mp4", size=7),
+                ],
+            }
+        )
 
     def test_wildcard_and_files_only(self):
-        rc, out = run(cli.cmd_find, self.client, path=DATA, name="*.mp4",
-                      max_depth=3, files=True, dirs=False, json=True)
+        rc, out = run(
+            cli.cmd_find, self.client, path=DATA, name="*.mp4", max_depth=3, files=True, dirs=False, json=True
+        )
         names = sorted(row["name"] for row in json.loads(out))
         self.assertEqual(rc, 0)
         self.assertEqual(names, ["deep.mp4", "movie.mp4"])
 
     def test_dirs_only(self):
-        rc, out = run(cli.cmd_find, self.client, path=DATA, name=None,
-                      max_depth=3, files=False, dirs=True, json=True)
+        rc, out = run(cli.cmd_find, self.client, path=DATA, name=None, max_depth=3, files=False, dirs=True, json=True)
         self.assertEqual(rc, 0)
         self.assertEqual(sorted(row["name"] for row in json.loads(out)), ["sub"])
 
 
 class TestTree(unittest.TestCase):
     def test_renders_branches(self):
-        client = FakeClient(tree={
-            DATA: [
-                item(DATA, name="data", is_dir=True),
-                item(f"{DATA}/docs", name="docs", is_dir=True),
-                item(f"{DATA}/a.txt", name="a.txt", size=2048),
-            ],
-            f"{DATA}/docs": [item(f"{DATA}/docs", name="docs", is_dir=True)],
-        })
+        client = FakeClient(
+            tree={
+                DATA: [
+                    item(DATA, name="data", is_dir=True),
+                    item(f"{DATA}/docs", name="docs", is_dir=True),
+                    item(f"{DATA}/a.txt", name="a.txt", size=2048),
+                ],
+                f"{DATA}/docs": [item(f"{DATA}/docs", name="docs", is_dir=True)],
+            }
+        )
         rc, out = run(cli.cmd_tree, client, path=DATA, max_depth=2)
         self.assertEqual(rc, 0)
         self.assertIn(f"{DATA}", out)
@@ -218,18 +222,20 @@ class TestTree(unittest.TestCase):
 
 class TestMkdir(unittest.TestCase):
     def test_creates_each_level(self):
-        client = FakeClient(replies={("MKCOL", "/pool0/"): (201, {}, b""),
-                                     ("MKCOL", "/pool0/data/"): (201, {}, b""),
-                                     ("MKCOL", "/pool0/data/work/"): (201, {}, b"")})
+        client = FakeClient(
+            replies={
+                ("MKCOL", "/pool0/"): (201, {}, b""),
+                ("MKCOL", "/pool0/data/"): (201, {}, b""),
+                ("MKCOL", "/pool0/data/work/"): (201, {}, b""),
+            }
+        )
         rc, out = run(cli.cmd_mkdir, client, path=f"{DATA}/work")
         self.assertEqual(rc, 0)
         self.assertIn("mkdir ok", out)
-        self.assertEqual(client.paths_for("MKCOL"),
-                         ["/pool0/", "/pool0/data/", "/pool0/data/work/"])
+        self.assertEqual(client.paths_for("MKCOL"), ["/pool0/", "/pool0/data/", "/pool0/data/work/"])
 
     def test_already_exists_is_fine(self):
-        client = FakeClient(replies={("MKCOL", "/pool0/"): (405, {}, b""),
-                                     ("MKCOL", "/pool0/data/"): (405, {}, b"")})
+        client = FakeClient(replies={("MKCOL", "/pool0/"): (405, {}, b""), ("MKCOL", "/pool0/data/"): (405, {}, b"")})
         rc, _ = run(cli.cmd_mkdir, client, path=DATA)
         self.assertEqual(rc, 0)
 
@@ -241,16 +247,17 @@ class TestMkdir(unittest.TestCase):
 
 class TestRm(unittest.TestCase):
     def test_recursive_deletes_children_then_parent(self):
-        client = FakeClient(tree={
-            f"{DATA}/dir": [
-                item(f"{DATA}/dir", name="dir", is_dir=True),
-                item(f"{DATA}/dir/sub", name="sub", is_dir=True),
-                item(f"{DATA}/dir/a.txt", name="a.txt", size=1),
-            ],
-            f"{DATA}/dir/sub": [item(f"{DATA}/dir/sub", name="sub", is_dir=True)],
-        })
-        rc, out = run(cli.cmd_rm, client, path=f"{DATA}/dir", recursive=True,
-                      json=False, force=True)
+        client = FakeClient(
+            tree={
+                f"{DATA}/dir": [
+                    item(f"{DATA}/dir", name="dir", is_dir=True),
+                    item(f"{DATA}/dir/sub", name="sub", is_dir=True),
+                    item(f"{DATA}/dir/a.txt", name="a.txt", size=1),
+                ],
+                f"{DATA}/dir/sub": [item(f"{DATA}/dir/sub", name="sub", is_dir=True)],
+            }
+        )
+        rc, out = run(cli.cmd_rm, client, path=f"{DATA}/dir", recursive=True, json=False, force=True)
         self.assertEqual(rc, 0)
         self.assertIn("removed", out)
         deleted = client.paths_for("DELETE")
@@ -260,22 +267,19 @@ class TestRm(unittest.TestCase):
 
     def test_non_recursive_409_reports_failure(self):
         client = FakeClient(replies={("DELETE", f"{DATA}/dir"): (409, {}, b"")})
-        rc, _ = run(cli.cmd_rm, client, path=f"{DATA}/dir", recursive=True,
-                    json=False, force=True)
+        rc, _ = run(cli.cmd_rm, client, path=f"{DATA}/dir", recursive=True, json=False, force=True)
         self.assertEqual(rc, 1)
 
     def test_404_counts_as_removed(self):
         client = FakeClient(replies={("DELETE", f"{DATA}/gone"): (404, {}, b"")})
-        rc, _ = run(cli.cmd_rm, client, path=f"{DATA}/gone", recursive=False,
-                    json=False, force=True)
+        rc, _ = run(cli.cmd_rm, client, path=f"{DATA}/gone", recursive=False, json=False, force=True)
         self.assertEqual(rc, 0)
 
 
 class TestMoveCopy(unittest.TestCase):
     def test_mv_sends_encoded_destination_and_overwrite(self):
         client = FakeClient(replies={("MOVE", f"{DATA}/a b.txt"): (201, {}, b"")})
-        rc, out = run(cli.cmd_mv, client, src=f"{DATA}/a b.txt",
-                      dst=f"{DATA}/b.txt", force=True)
+        rc, out = run(cli.cmd_mv, client, src=f"{DATA}/a b.txt", dst=f"{DATA}/b.txt", force=True)
         self.assertEqual(rc, 0)
         self.assertIn("moved", out)
         method, path, headers = client.calls[-1]
@@ -285,15 +289,13 @@ class TestMoveCopy(unittest.TestCase):
 
     def test_cp_without_force_uses_overwrite_false(self):
         client = FakeClient(replies={("COPY", f"{DATA}/a.txt"): (204, {}, b"")})
-        rc, _ = run(cli.cmd_cp, client, src=f"{DATA}/a.txt", dst=f"{DATA}/c.txt",
-                    force=False)
+        rc, _ = run(cli.cmd_cp, client, src=f"{DATA}/a.txt", dst=f"{DATA}/c.txt", force=False)
         self.assertEqual(rc, 0)
         self.assertEqual(client.calls[-1][2]["Overwrite"], "F")
 
     def test_failure_exit_code(self):
         client = FakeClient(replies={("MOVE", f"{DATA}/a.txt"): (409, {}, b"nope")})
-        rc, _ = run(cli.cmd_mv, client, src=f"{DATA}/a.txt", dst=f"{DATA}/b.txt",
-                    force=True)
+        rc, _ = run(cli.cmd_mv, client, src=f"{DATA}/a.txt", dst=f"{DATA}/b.txt", force=True)
         self.assertEqual(rc, 1)
 
 
@@ -314,8 +316,7 @@ class TestGetPut(unittest.TestCase):
 
     def test_get_404(self):
         client = FakeClient(replies={("GET", f"{DATA}/missing"): (404, {}, b"")})
-        rc, _ = run(cli.cmd_get, client, remote=f"{DATA}/missing",
-                    local=str(pathlib.Path(self.tmp.name) / "x"))
+        rc, _ = run(cli.cmd_get, client, remote=f"{DATA}/missing", local=str(pathlib.Path(self.tmp.name) / "x"))
         self.assertEqual(rc, 2)
 
     def test_put_goes_through_temp_name_and_verifies(self):
@@ -337,18 +338,22 @@ class TestGetPut(unittest.TestCase):
 
     def test_put_missing_local_file(self):
         client = FakeClient()
-        rc, _ = run(cli.cmd_put, client,
-                    local=str(pathlib.Path(self.tmp.name) / "nope"),
-                    remote=f"{DATA}/x")
+        rc, _ = run(cli.cmd_put, client, local=str(pathlib.Path(self.tmp.name) / "nope"), remote=f"{DATA}/x")
         self.assertEqual(rc, 2)
 
 
 class TestDf(unittest.TestCase):
     def test_pool_payload(self):
-        client = FakeClient(pool=[{
-            "name": "pool0", "total_size": 1024, "used_size": 512,
-            "data_dir": "/pool0/data",
-        }])
+        client = FakeClient(
+            pool=[
+                {
+                    "name": "pool0",
+                    "total_size": 1024,
+                    "used_size": 512,
+                    "data_dir": "/pool0/data",
+                }
+            ]
+        )
         rc, out = run(cli.cmd_df, client, json=True)
         payload = json.loads(out)
         self.assertEqual(rc, 0)

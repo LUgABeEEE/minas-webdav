@@ -10,6 +10,7 @@ themselves.
 * Linux — feed it to ``davfs2`` (``mount -t davfs http://127.0.0.1:8899/ /mnt/n``)
   or to any HTTP-speaking client. The CLI/MCP do **not** need the proxy.
 """
+
 from __future__ import annotations
 
 import base64
@@ -54,9 +55,18 @@ def _init() -> None:
     # by WebDAV itself — measured 2026-11-01).
     _ctx = client_ctx()
 
+
 HOP = {
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "content-length", "host",
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+    "host",
 }
 
 
@@ -129,19 +139,44 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
-    def do_GET(self): self._proxy("GET")
-    def do_HEAD(self): self._proxy("HEAD")
-    def do_PUT(self): self._proxy("PUT")
-    def do_POST(self): self._proxy("POST")
-    def do_DELETE(self): self._proxy("DELETE")
-    def do_OPTIONS(self): self._proxy("OPTIONS")
-    def do_PROPFIND(self): self._proxy("PROPFIND")
-    def do_PROPPATCH(self): self._proxy("PROPPATCH")
-    def do_MKCOL(self): self._proxy("MKCOL")
-    def do_COPY(self): self._proxy("COPY")
-    def do_MOVE(self): self._proxy("MOVE")
-    def do_LOCK(self): self._proxy("LOCK")
-    def do_UNLOCK(self): self._proxy("UNLOCK")
+    def do_GET(self):
+        self._proxy("GET")
+
+    def do_HEAD(self):
+        self._proxy("HEAD")
+
+    def do_PUT(self):
+        self._proxy("PUT")
+
+    def do_POST(self):
+        self._proxy("POST")
+
+    def do_DELETE(self):
+        self._proxy("DELETE")
+
+    def do_OPTIONS(self):
+        self._proxy("OPTIONS")
+
+    def do_PROPFIND(self):
+        self._proxy("PROPFIND")
+
+    def do_PROPPATCH(self):
+        self._proxy("PROPPATCH")
+
+    def do_MKCOL(self):
+        self._proxy("MKCOL")
+
+    def do_COPY(self):
+        self._proxy("COPY")
+
+    def do_MOVE(self):
+        self._proxy("MOVE")
+
+    def do_LOCK(self):
+        self._proxy("LOCK")
+
+    def do_UNLOCK(self):
+        self._proxy("UNLOCK")
 
 
 def run(argv: list[str] | None = None) -> int:

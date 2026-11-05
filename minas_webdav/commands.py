@@ -1,4 +1,5 @@
 """Command handlers: one function per CLI subcommand."""
+
 from __future__ import annotations
 
 import argparse
@@ -53,7 +54,7 @@ def cmd_stat(client: MinasWebDAV, args: argparse.Namespace) -> int:
         print(f"name: {it['name']}")
         print(f"type: {'dir' if it['is_dir'] else 'file'}")
         print(f"size: {it['size']} ({fmt_size(it['size'])})")
-        print(f"modified: {it.get('modified','')}")
+        print(f"modified: {it.get('modified', '')}")
     return 0
 
 
@@ -274,23 +275,26 @@ def _exists(client: MinasWebDAV, path: str) -> bool:
 
 def _put_bytes(client: MinasWebDAV, path: str, data: bytes) -> tuple[int, bytes]:
     status, _, body = client.request(
-        "PUT", path, body=data,
-        headers={"Content-Type": "application/octet-stream"}, with_mtls=True,
+        "PUT",
+        path,
+        body=data,
+        headers={"Content-Type": "application/octet-stream"},
+        with_mtls=True,
     )
     return status, body
 
 
 def _move(client: MinasWebDAV, src: str, dst: str) -> int:
     status, _, _ = client.request(
-        "MOVE", src,
+        "MOVE",
+        src,
         headers={"Destination": dest_header(dst), "Overwrite": "T"},
         with_mtls=True,
     )
     return status
 
 
-def safe_put(client: MinasWebDAV, remote: str, data: bytes,
-             verify: str | None = None) -> dict[str, Any]:
+def safe_put(client: MinasWebDAV, remote: str, data: bytes, verify: str | None = None) -> dict[str, Any]:
     """把 data 安全写到 remote，返回 ok / status / size / verified / error。
 
     从不直接 PUT 到已存在的名字；写完回读核对，不符就 ok=False，绝不静默成功。
@@ -302,39 +306,40 @@ def safe_put(client: MinasWebDAV, remote: str, data: bytes,
 
     status, body = _put_bytes(client, tmp, data)
     if status not in (200, 201, 204):
-        return {"ok": False, "status": status,
-                "error": f"PUT {tmp} -> HTTP {status}: {body[:160]!r}"}
+        return {"ok": False, "status": status, "error": f"PUT {tmp} -> HTTP {status}: {body[:160]!r}"}
 
     target_existed = _exists(client, remote)
     moved = _move(client, tmp, remote)
     if moved not in (200, 201, 204):
         if not target_existed:
-            return {"ok": False, "status": moved,
-                    "error": f"MOVE {tmp} -> {remote} -> HTTP {moved}"}
+            return {"ok": False, "status": moved, "error": f"MOVE {tmp} -> {remote} -> HTTP {moved}"}
         # 退回 DELETE + PUT：删掉旧的之后就是全新创建，不存在留尾巴的前提
         client.request("DELETE", remote, with_mtls=True)
         status2, body2 = _put_bytes(client, remote, data)
         client.request("DELETE", tmp, with_mtls=True)
         if status2 not in (200, 201, 204):
-            return {"ok": False, "status": status2,
-                    "error": f"PUT {remote} -> HTTP {status2}: {body2[:160]!r}"}
+            return {"ok": False, "status": status2, "error": f"PUT {remote} -> HTTP {status2}: {body2[:160]!r}"}
 
     items = client.propfind(remote, depth="0", with_mtls=True)
     got_size = items[0].get("size") if items else None
     if got_size != len(data):
-        return {"ok": False, "status": 204, "size": got_size, "expected": len(data),
-                "error": f"回读长度 {got_size} != 写入 {len(data)}（正是不截断那个 bug 的形状）"}
+        return {
+            "ok": False,
+            "status": 204,
+            "size": got_size,
+            "expected": len(data),
+            "error": f"回读长度 {got_size} != 写入 {len(data)}（正是不截断那个 bug 的形状）",
+        }
 
     if verify == "off":
         return {"ok": True, "status": 204, "size": got_size, "verified": "none"}
     if verify == "sha":
         _, _, back = client.request("GET", remote, with_mtls=True)
         if _sha256(back) != _sha256(data):
-            return {"ok": False, "status": 204, "size": got_size,
-                    "error": "回读 sha256 与写入内容不一致"}
-        return {"ok": True, "status": 204, "size": got_size,
-                "sha256": _sha256(data), "verified": "size+sha256"}
+            return {"ok": False, "status": 204, "size": got_size, "error": "回读 sha256 与写入内容不一致"}
+        return {"ok": True, "status": 204, "size": got_size, "sha256": _sha256(data), "verified": "size+sha256"}
     return {"ok": True, "status": 204, "size": got_size, "verified": "size"}
+
 
 def cmd_mv(client: MinasWebDAV, args: argparse.Namespace) -> int:
     src = ensure_data_path(args.src)
@@ -403,6 +408,7 @@ def cmd_find(client: MinasWebDAV, args: argparse.Namespace) -> int:
             mark = "/" if it["is_dir"] else ""
             print(f"{fmt_size(it['size']):>10}  {it['path']}{mark}")
     return 0
+
 
 def cmd_tree(client: MinasWebDAV, args: argparse.Namespace) -> int:
     root = ensure_data_path(args.path)

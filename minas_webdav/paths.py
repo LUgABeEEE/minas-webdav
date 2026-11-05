@@ -1,4 +1,5 @@
 """Path helpers: DAV path normalisation, size formatting, data-root sandbox."""
+
 from __future__ import annotations
 
 import os
@@ -6,6 +7,7 @@ import re
 import urllib.parse
 
 DATA_ROOT = os.environ.get("MINAS_DATA_ROOT", "/pool0/data")
+
 
 def enc_path(path: str) -> str:
     if not path.startswith("/"):
@@ -23,6 +25,7 @@ def norm(path: str) -> str:
     if path != "/" and path.endswith("/"):
         path = path[:-1]
     return path
+
 
 def fmt_size(n: float) -> str:
     n = float(n)
@@ -60,6 +63,7 @@ def ensure_data_path(path: str) -> str:
 
 
 # --------------- commands ---------------
+
 
 def fnmatch_to_re(pattern: str) -> str:
     out = []

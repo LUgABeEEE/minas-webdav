@@ -47,8 +47,7 @@ class TestToolCatalogue(unittest.TestCase):
     def test_every_tool_has_a_description(self):
         for tool in self.tools:
             with self.subTest(tool=tool.name):
-                self.assertTrue((tool.description or "").strip(),
-                                f"{tool.name} has no description")
+                self.assertTrue((tool.description or "").strip(), f"{tool.name} has no description")
                 schema = getattr(tool, "input_schema", None)
                 self.assertTrue(schema, f"{tool.name} has no input schema")
 

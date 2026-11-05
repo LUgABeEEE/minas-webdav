@@ -7,6 +7,7 @@ an existing name (temp name + MOVE) and verifies the result by reading it back.
 
 These tests pin that contract down without touching the network.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -17,8 +18,7 @@ from minas_webdav import cli
 class FakeClient:
     """Only the surface ``safe_put()`` actually uses."""
 
-    def __init__(self, *, existed=False, old_size=0, final_size=None,
-                 move_status=201, put_status=201, back_bytes=None):
+    def __init__(self, *, existed=False, old_size=0, final_size=None, move_status=201, put_status=201, back_bytes=None):
         self.existed = existed
         self.old_size = old_size
         self.final_size = final_size
@@ -69,8 +69,7 @@ class TestSafePut(unittest.TestCase):
         self.tmp = self.remote + cli.PUT_TMP_SUFFIX
 
     def test_never_puts_onto_an_existing_name(self):
-        client = FakeClient(existed=True, old_size=4096, final_size=len(self.data),
-                            back_bytes=self.data)
+        client = FakeClient(existed=True, old_size=4096, final_size=len(self.data), back_bytes=self.data)
         res = cli.safe_put(client, self.remote, self.data)
         self.assertTrue(res["ok"], res)
         # the payload only ever lands on the temp name
@@ -85,8 +84,7 @@ class TestSafePut(unittest.TestCase):
 
     def test_size_mismatch_is_a_failure(self):
         # exactly the shape of the truncation bug: 204 + old (larger) size
-        client = FakeClient(existed=True, old_size=4096, final_size=4096,
-                            back_bytes=self.data)
+        client = FakeClient(existed=True, old_size=4096, final_size=4096, back_bytes=self.data)
         res = cli.safe_put(client, self.remote, self.data)
         self.assertFalse(res["ok"])
         self.assertIn("回读长度", res["error"])
@@ -104,8 +102,9 @@ class TestSafePut(unittest.TestCase):
         self.assertIn("HTTP 500", res["error"])
 
     def test_move_failure_falls_back_to_delete_then_put(self):
-        client = FakeClient(existed=True, old_size=4096, final_size=len(self.data),
-                            back_bytes=self.data, move_status=502)
+        client = FakeClient(
+            existed=True, old_size=4096, final_size=len(self.data), back_bytes=self.data, move_status=502
+        )
         res = cli.safe_put(client, self.remote, self.data)
         self.assertTrue(res["ok"], res)
         # DELETE the stale target, then a fresh PUT (new file ⇒ no old tail)

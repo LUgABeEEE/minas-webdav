@@ -9,6 +9,7 @@ Requires the optional ``mcp`` extra (``pip install "mcp>=2,<3"``).
 
 Shared core with the CLI (minas_webdav.cli / minas_webdav.config).
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -55,10 +56,7 @@ def _hint(err: Exception) -> str:
     msg = str(err)
     low = msg.lower()
     if "cert" in low or "discover" in low or "credential" in low or "451" in msg:
-        return (
-            "check credentials + mTLS certs (official client login). "
-            f"[{_mconf.describe_env()}]"
-        )
+        return f"check credentials + mTLS certs (official client login). [{_mconf.describe_env()}]"
     if "423" in msg:
         return "resource is locked (locks linger up to 60s after delete); retry later or use another path"
     if "403" in msg:
@@ -79,18 +77,10 @@ def _fail(err: Exception) -> dict[str, Any]:
     return {"ok": False, "error": f"{type(err).__name__}: {err}", "hint": _hint(err)}
 
 
-READ = ToolAnnotations(
-    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
-)
-WRITE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True
-)
-DESTRUCTIVE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True
-)
-NONIDEM = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
-)
+READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
+WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
+DESTRUCTIVE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True)
+NONIDEM = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
 
 
 @mcp.tool(annotations=READ)
@@ -125,6 +115,7 @@ def nas_tree(path: str = DATA_ROOT, max_depth: int = 2) -> dict[str, Any]:
     max_depth = max(0, min(int(max_depth), 4))
     nodes: list[dict[str, Any]] = []
     try:
+
         def rec(cur: str, depth: int) -> None:
             for it in _list_dir(_client(), cur):
                 nodes.append({"depth": depth, **it})
@@ -152,6 +143,7 @@ def nas_find(
     name_re = re.compile(fnmatch_to_re(name)) if name else None
     found: list[dict[str, Any]] = []
     try:
+
         def rec(cur: str, depth: int) -> None:
             if len(found) >= limit:
                 return
@@ -313,10 +305,19 @@ def nas_put(local: str, remote: str) -> dict[str, Any]:
     except Exception as e:
         return _fail(e)
     if not res.get("ok"):
-        return {"ok": False, "error": res.get("error"),
-                "hint": "先传临时名再 MOVE 也没成功；见 minas-webdav/README.md 的「已知问题」"}
-    return _ok(path=p, local=str(src), bytes=size, status=res.get("status"),
-               verified=res.get("verified"), sha256=res.get("sha256"))
+        return {
+            "ok": False,
+            "error": res.get("error"),
+            "hint": "先传临时名再 MOVE 也没成功；见 minas-webdav/README.md 的「已知问题」",
+        }
+    return _ok(
+        path=p,
+        local=str(src),
+        bytes=size,
+        status=res.get("status"),
+        verified=res.get("verified"),
+        sha256=res.get("sha256"),
+    )
 
 
 @mcp.tool(annotations=WRITE)
@@ -342,7 +343,8 @@ def nas_mv(src: str, dst: str, force: bool = False) -> dict[str, Any]:
     s, d = _safe_path(src), _safe_path(dst)
     try:
         status, _, body = _client().request(
-            "MOVE", s,
+            "MOVE",
+            s,
             headers={"Destination": dest_header(d), "Overwrite": "T" if force else "F"},
             with_mtls=True,
         )
@@ -359,7 +361,8 @@ def nas_cp(src: str, dst: str, force: bool = False) -> dict[str, Any]:
     s, d = _safe_path(src), _safe_path(dst)
     try:
         status, _, body = _client().request(
-            "COPY", s,
+            "COPY",
+            s,
             headers={"Destination": dest_header(d), "Overwrite": "T" if force else "F"},
             with_mtls=True,
         )
@@ -377,9 +380,7 @@ def nas_rm(path: str, recursive: bool = False, confirm: bool = False) -> dict[st
     recursive=True requires confirm=True — only after the user explicitly agreed.
     """
     if recursive and not confirm:
-        raise ValueError(
-            "recursive delete requires confirm=true. Ask the user for explicit consent first."
-        )
+        raise ValueError("recursive delete requires confirm=true. Ask the user for explicit consent first.")
     p = _safe_path(path)
     client = _client()
 

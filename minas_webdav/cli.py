@@ -22,6 +22,7 @@ The implementation lives in `client` (transport), `davxml` (PROPFIND parsing),
 keeps the argparse surface plus the historical `minas_webdav.cli.*` import
 surface.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -117,6 +118,7 @@ __all__ = [
     "walk_sizes",
 ]
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="minas-webdav", description="Xiaomi Smart Storage WebDAV CLI for agents")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -198,6 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_tree)
 
     return p
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
