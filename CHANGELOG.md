@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- CI: a `coverage` job runs the suite under `coverage.py` and fails below 48%
-  (measured baseline 49% on 2026-11-05) — a ratchet, to be raised as real tests
+- CI: a `coverage` job runs the suite under `coverage.py` and fails below 46%
+  (measured baseline 47% on the Linux runner, 2026-11-05) — a ratchet, to be raised as real tests
   land.
 - CI: a `ci-ok` aggregate job exists so branch protection can require one stable
   context instead of the interpreter-specific matrix names. `master` now

@@ -90,13 +90,13 @@ jobs:
       - run: python -m pip install --upgrade pip coverage
       - run: python -m pip install -e ".[mcp,dev]"
       - name: Measure and enforce the coverage floor
-        # Ratchet, not a target: the measured baseline on 2026-11-05 was 49%
-        # (mcp_server/probe/proxy are thin wrappers over the device), so 48
-        # catches regressions without failing on incidental churn. Raise it
-        # whenever real tests land.
+        # Ratchet, not a target: the Linux runner measured 47% on 2026-11-05
+        # (Windows-only branches in probe/proxy cannot execute there; a local
+        # Windows run sees 49%), so 46 catches regressions without failing on
+        # incidental churn. Raise it whenever real tests land.
         run: |
           python -m coverage run --source=minas_webdav -m unittest discover -s tests
-          python -m coverage report --fail-under=48
+          python -m coverage report --fail-under=46
 
   # Single stable context for branch protection: matrix job names carry the
   # interpreter version, so requiring them directly would break every time the
