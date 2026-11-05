@@ -1,6 +1,6 @@
 [project]
 name = "minas-webdav"
-version = "0.3.5"
+version = "0.3.6"
 description = "Xiaomi Smart Storage (MINAS) WebDAV control toolkit: CLI, probe, local proxy"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -9,8 +9,13 @@ authors = [{ name = "LUgABeEEE" }]
 keywords = ["xiaomi", "minas", "webdav", "nas", "mcp", "cli", "agent"]
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Environment :: Console",
   "Operating System :: OS Independent",
   "Topic :: System :: Filesystems",
@@ -25,7 +30,7 @@ Issues = "https://github.com/LUgABeEEE/minas-webdav/issues"
 
 [project.optional-dependencies]
 mcp = ["mcp>=2,<3"]
-dev = ["pytest>=7", "ruff>=0.6"]
+dev = ["pytest>=7,<9", "ruff>=0.6,<0.15"]
 # POSIX: derive the device CN without the Windows-only `certutil` fallback.
 posix = ["cryptography>=42"]
 

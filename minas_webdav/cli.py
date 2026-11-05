@@ -131,7 +131,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("path", nargs="?", default=DATA_ROOT)
     sp.add_argument("--json", action="store_true")
     sp.add_argument("--self-only", action="store_true", help="only stat the path itself")
-    sp.add_argument("--long", action="store_true", default=True)
     sp.set_defaults(func=cmd_ls)
 
     sp = sub.add_parser("stat", help="stat one path")

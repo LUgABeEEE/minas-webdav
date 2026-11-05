@@ -2,14 +2,76 @@
 """Tests for the loopback reverse proxy's request handling.
 
 The interesting logic is pure (target sanitising, Destination rewriting,
-non-ascii encoding), so these run without a server, a device or credentials.
+non-ascii encoding, body framing), so these run without a server, a device or
+credentials.
 """
 
 from __future__ import annotations
 
+import io
 import unittest
 
 from minas_webdav import proxy
+
+
+class TestRequestFraming(unittest.TestCase):
+    """A PUT must never be truncated silently — that loses data on the device."""
+
+    def test_content_length_is_honoured(self):
+        body = b"x" * 10
+        slices, length = proxy.request_body({"Content-Length": "10"}, io.BytesIO(body))
+        self.assertEqual(length, 10)
+        self.assertEqual(b"".join(slices), body)
+
+    def test_large_body_is_sliced(self):
+        body = b"y" * (proxy.CHUNK_SIZE * 2 + 5)
+        slices, length = proxy.request_body({"Content-Length": str(len(body))}, io.BytesIO(body))
+        pieces = list(slices)
+        self.assertEqual(length, len(body))
+        self.assertGreater(len(pieces), 1)
+        self.assertTrue(all(len(p) <= proxy.CHUNK_SIZE for p in pieces))
+        self.assertEqual(b"".join(pieces), body)
+
+    def test_chunked_body_is_decoded(self):
+        stream = io.BytesIO(b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n")
+        slices, length = proxy.request_body({"Transfer-Encoding": "chunked"}, stream)
+        self.assertIsNone(length)
+        self.assertEqual(b"".join(slices), b"hello world")
+
+    def test_chunked_with_extension_and_trailers(self):
+        stream = io.BytesIO(b"4;foo=bar\r\ndata\r\n0\r\nX-Trailer: 1\r\n\r\n")
+        slices, _ = proxy.request_body({"Transfer-Encoding": "chunked"}, stream)
+        self.assertEqual(b"".join(slices), b"data")
+
+    def test_chunked_bad_size_is_rejected(self):
+        stream = io.BytesIO(b"zz\r\ndata\r\n0\r\n\r\n")
+        slices, _ = proxy.request_body({"Transfer-Encoding": "chunked"}, stream)
+        with self.assertRaises(proxy.ChunkedError):
+            list(slices)
+
+    def test_chunked_truncated_payload_is_rejected(self):
+        stream = io.BytesIO(b"9\r\nshort\r\n")
+        slices, _ = proxy.request_body({"Transfer-Encoding": "chunked"}, stream)
+        with self.assertRaises(proxy.ChunkedError):
+            list(slices)
+
+    def test_short_content_length_body_is_rejected(self):
+        slices, _ = proxy.request_body({"Content-Length": "20"}, io.BytesIO(b"only10byte"))
+        with self.assertRaises(proxy.ChunkedError):
+            list(slices)
+
+    def test_no_body(self):
+        self.assertEqual(proxy.request_body({}, io.BytesIO(b"")), (None, None))
+        self.assertEqual(proxy.request_body({"Content-Length": "0"}, io.BytesIO(b"")), (None, 0))
+
+    def test_bad_content_length_is_rejected(self):
+        for bad in ("abc", "-1", "1.5"):
+            with self.subTest(value=bad), self.assertRaises(ValueError):
+                proxy.request_body({"Content-Length": bad}, io.BytesIO(b""))
+
+    def test_chunk_frame_round_trip(self):
+        stream = io.BytesIO(proxy.chunk_frame(b"hello") + proxy.LAST_CHUNK)
+        self.assertEqual(b"".join(proxy.iter_chunked(stream.readline, stream.read)), b"hello")
 
 
 class TestSanitizeTarget(unittest.TestCase):

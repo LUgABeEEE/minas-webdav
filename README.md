@@ -12,6 +12,29 @@
 | `python -m minas_webdav probe` | 协议能力探测：读写全链路 + 认证 + 锁 |
 | `python -m minas_webdav proxy` | 本机反向代理（`127.0.0.1:8899`），供 Windows `net use` / Linux `davfs2` 挂盘 |
 
+### 命令参考
+
+<!-- command-table:start -->
+| 命令 | 作用 | 主要参数 |
+|---|---|---|
+| `cat` | 把远端文件打印到 stdout | — |
+| `cp` | 复制（`-f` 覆盖） | `--force` |
+| `df` | 存储池容量（走 mTLS 的 LuCI API，需要客户端证书） | `--json` |
+| `du` | 统计子目录体积（`--max-depth`，默认 2） | `--max-depth` `--json` |
+| `find` | 按名字通配查找（`--name` `--max-depth` `--files/--dirs`） | `--name` `--max-depth` `--files` `--dirs` `--json` |
+| `get` | 下载文件到本地 | — |
+| `ls` | 列目录（`--json` 便于 agent 解析；`--self-only` 只 stat 自身） | `--json` `--self-only` |
+| `mkdir` | 创建目录（自动建父级） | — |
+| `mv` | 移动/改名（`-f` 覆盖） | `--force` |
+| `put` | 上传本地文件（带校验与失败回退） | — |
+| `rm` | 删除文件/目录（`-r` 递归需谨慎） | `--recursive` `--json` `--force` |
+| `stat` | 查看单个路径的属性（大小/时间等） | `--json` |
+| `tree` | 打印目录树（`--max-depth`，默认 2） | `--max-depth` |
+<!-- command-table:end -->
+
+退出码：`0` 成功、`1` 用法/一般错误、`2` 路径不存在、`3` 认证或网络错误。
+所有列出/统计类子命令都支持 `--json`，输出可直接喂给 agent。
+
 ## 安装
 
 ```bash
