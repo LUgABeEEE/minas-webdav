@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-05
+
+### Changed
+
+- Copyright holder in `LICENSE`, `NOTICE` (and the `dsh/` copies) is now
+  `LUgABeEEE` — the GitHub account name — instead of `g1394`, so the licence
+  header and the published packages name the same person as the repository
+  owner. The 0.3.0–0.3.4 artifacts keep the old string, since published
+  versions cannot be rewritten.
+
 ## [0.3.4] - 2026-11-05
 
 ### Added
@@ -283,7 +293,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...v0.3.2
