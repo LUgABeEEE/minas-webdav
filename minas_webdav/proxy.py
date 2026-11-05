@@ -19,7 +19,7 @@ import os
 import ssl
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from . import config as _mconf
 
@@ -80,6 +80,44 @@ def ascii_path(path: str) -> str:
         return "/".join(quote(p, safe="") if p else p for p in parts)
 
 
+def sanitize_target(raw: str) -> str:
+    """Validate a client request-target and return it unchanged when safe.
+
+    Only *origin-form* targets (``/path?query``) are accepted. A client can send
+    an absolute-form target (``GET http://evil/x HTTP/1.1``), a network-path
+    reference (``//evil/x``) or inject CR/LF; forwarding any of those upstream
+    would let a local caller steer the request line sent to the device (CodeQL
+    ``py/partial-ssrf``). The upstream host/port stay fixed either way.
+    """
+    if not raw:
+        raise ValueError("empty request target")
+    if any(ch in raw for ch in ("\r", "\n", "\x00", " ", "\t")):
+        raise ValueError("control character or whitespace in request target")
+    if not raw.startswith("/"):
+        raise ValueError("only origin-form request targets are supported")
+    if raw.startswith("//"):
+        raise ValueError("network-path references are not allowed")
+    return raw
+
+
+def rewrite_destination(value: str) -> str:
+    """Reduce a client ``Destination`` header to the path-only form the device wants.
+
+    WebDAV clients (Explorer, davfs2) send an absolute URL such as
+    ``http://127.0.0.1:8899/a/b``; the device rejects a URL in ``Destination``
+    (400) and only accepts a percent-encoded path. Without this rewrite a
+    MOVE/COPY through the proxy fails.
+    """
+    raw = value.strip()
+    if "://" in raw:
+        raw = urlsplit(raw).path or "/"
+    elif raw.startswith("//"):
+        raw = "/" + raw.lstrip("/")
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    return ascii_path(sanitize_target(raw))
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -87,14 +125,31 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
         sys.stderr.flush()
 
+    def _bad_request(self, message: str) -> None:
+        body = message.encode("utf-8", "replace")
+        self.close_connection = True
+        self.send_response(400)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _proxy(self, method):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
-        up_path = ascii_path(self.path)
+        try:
+            up_path = ascii_path(sanitize_target(self.path))
+        except ValueError as exc:
+            self._bad_request(str(exc))
+            return
         conn = http.client.HTTPSConnection(UP_HOST, UP_PORT, context=_ctx, timeout=120)
         headers = {}
         for k, v in self.headers.items():
             if k.lower() in HOP:
+                continue
+            if k.lower() == "destination" and method in ("MOVE", "COPY"):
+                headers[k] = rewrite_destination(v)
                 continue
             headers[k] = v
         headers["Authorization"] = "Basic " + TOKEN

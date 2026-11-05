@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-05
+
+### Added
+
+- `tests/test_proxy.py` (11 cases): request-target sanitising, `Destination`
+  rewriting and non-ascii encoding for the loopback proxy.
+- CI: `ruff format --check .` next to `ruff check`, so formatting now gates
+  merges instead of drifting.
+
+### Fixed
+
+- **Proxy only accepts origin-form request targets.** An absolute-form target
+  (`GET http://evil/x`), a network-path reference (`//evil/x`) or CR/LF in the
+  path is now answered with `400` instead of being forwarded upstream (CodeQL
+  `py/partial-ssrf`). The upstream host/port were always fixed; this closes the
+  remaining way to steer the request line.
+- **MOVE/COPY through the proxy work again.** `Destination` arrived as an
+  absolute URL (`http://127.0.0.1:8899/…`) and the device rejects that with
+  `400`; the header is now rewritten to the percent-encoded, path-only form the
+  device expects.
+
+### Changed
+
+- Repo-wide `ruff format` pass (whitespace only, no behaviour change).
+
 ## [0.3.1] - 2026-11-01
 
 ### Fixed
@@ -214,7 +239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.1.4...v0.2.0
