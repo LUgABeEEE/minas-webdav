@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-11-05
+
+### Fixed
+
+- **The proxy streams instead of buffering.** Request and response bodies are now
+  pumped in 64 KiB slices, so copying a 4 GB file through a mounted drive no
+  longer turns into 4 GB of resident memory. Verified against the device: a
+  3 MB PUT followed by a GET through the proxy returns a byte-identical file
+  (sha256).
+- **Chunked uploads are no longer silently emptied.** A client sending
+  `Transfer-Encoding: chunked` used to hit `Content-Length: 0`, so the device
+  stored an empty file without any error. The proxy now decodes the chunks and
+  re-frames them upstream; a 3 MB chunked PUT round-trips with an identical
+  sha256.
+- **`Expect: 100-continue` is answered by the proxy.** Clients used to stall
+  until their own timeout while the proxy waited for a body that had not been
+  sent; the header is now consumed locally and never forwarded.
+- Response framing is re-emitted per hop (`Content-Length` when the device sent
+  one, chunked otherwise) instead of buffering the body to compute a length.
+
+### Changed
+
+- CI: `setup-python` caches pip, a `concurrency` group cancels superseded runs,
+  and every job has a `timeout-minutes` cap.
+- The `dev` extra is bounded (`pytest>=7,<9`, `ruff>=0.6,<0.15`) so an upstream
+  release cannot redden CI on a green commit.
+- GitHub release bodies now come from the matching `CHANGELOG.md` section, the
+  same way `minas-skill` does it, instead of auto-generated notes.
+- README gained a command reference table generated from `build_parser()`;
+  `tests/test_docs.py` fails when it drifts (`MINAS_UPDATE_DOCS=1` regenerates).
+- `pyproject.toml`: explicit 3.10–3.13 classifiers and `Development Status`.
+
+### Removed
+
+- `ls --long`: the flag was declared but never read (it was always true), so it
+  only appeared in `--help` to mislead.
+
 ## [0.3.5] - 2026-11-05
 
 ### Changed
@@ -293,7 +330,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...v0.3.3

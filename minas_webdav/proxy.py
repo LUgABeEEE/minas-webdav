@@ -20,9 +20,16 @@ import os
 import ssl
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Iterator
 from urllib.parse import quote, urlsplit
 
 from . import config as _mconf
+
+# Bodies are pumped in fixed-size slices: a 4 GB PUT through a mounted drive must
+# not turn into 4 GB of resident memory.
+CHUNK_SIZE = 64 * 1024
+LAST_CHUNK = b"0\r\n\r\n"
+
 
 UP_HOST = ""
 UP_PORT = 5000
@@ -69,6 +76,87 @@ HOP = {
     "content-length",
     "host",
 }
+
+# Headers the proxy consumes or re-frames itself: forwarding them verbatim would
+# either double the framing (transfer-encoding) or leave the client waiting for a
+# 100-continue the device never sees (expect).
+DROP = HOP | {"expect"}
+
+
+class ChunkedError(ValueError):
+    """Malformed ``Transfer-Encoding: chunked`` framing from the client."""
+
+
+def iter_chunked(readline, read) -> Iterator[bytes]:
+    """Decode a chunked body, yielding payload slices as they arrive.
+
+    ``readline(n)`` returns one header line and ``read(n)`` up to n payload
+    bytes (``io.BytesIO`` in the tests, ``rfile`` in the handler). Framing
+    errors raise :class:`ChunkedError` so the handler can answer 400 instead of
+    forwarding a silently truncated upload.
+    """
+    while True:
+        line = readline(65536)
+        if not line:
+            raise ChunkedError("truncated chunk header")
+        size_field = line.split(b";")[0].strip()
+        try:
+            size = int(size_field, 16)
+        except ValueError as exc:
+            raise ChunkedError(f"bad chunk size {size_field!r}") from exc
+        if size == 0:
+            while True:  # optional trailers, then the blank line
+                trailer = readline(65536)
+                if trailer in (b"\r\n", b"\n", b""):
+                    return
+        remaining = size
+        while remaining:
+            data = read(min(remaining, CHUNK_SIZE))
+            if not data:
+                raise ChunkedError("truncated chunk payload")
+            remaining -= len(data)
+            yield data
+        if read(2) not in (b"\r\n", b"\n"):
+            raise ChunkedError("missing CRLF after chunk")
+
+
+def iter_exact(read, total: int) -> Iterator[bytes]:
+    """Yield exactly ``total`` bytes, a slice at a time."""
+    remaining = total
+    while remaining:
+        data = read(min(remaining, CHUNK_SIZE))
+        if not data:
+            raise ChunkedError("client closed before sending the declared body")
+        remaining -= len(data)
+        yield data
+
+
+def request_body(headers, rfile) -> tuple[Iterator[bytes] | None, int | None]:
+    """Work out how to pump the request body; return (slices, length).
+
+    ``length`` is ``None`` for chunked input (the proxy re-frames it for the
+    device) and the requested body is ``None`` when there is none. Raises
+    ValueError on framing the proxy cannot honour.
+    """
+    if "chunked" in (headers.get("Transfer-Encoding") or "").lower():
+        return iter_chunked(rfile.readline, rfile.read), None
+    raw = headers.get("Content-Length")
+    if raw is None:
+        return None, None
+    try:
+        length = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"bad Content-Length {raw!r}") from exc
+    if length < 0:
+        raise ValueError("negative Content-Length")
+    if length == 0:
+        return None, 0
+    return iter_exact(rfile.read, length), length
+
+
+def chunk_frame(data: bytes) -> bytes:
+    """Wrap one slice in HTTP/1.1 chunked framing."""
+    return b"%x\r\n%s\r\n" % (len(data), data)
 
 
 def ascii_path(path: str) -> str:
@@ -137,17 +225,27 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _proxy(self, method):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else b""
         try:
             up_path = ascii_path(sanitize_target(self.path))
         except ValueError as exc:
             self._bad_request(str(exc))
             return
+        expect = "100-continue" in (self.headers.get("Expect") or "").lower()
+        try:
+            body_slices, body_len = request_body(self.headers, self.rfile)
+        except (ValueError, ChunkedError) as exc:
+            self._bad_request(str(exc))
+            return
+        if expect and body_slices is not None:
+            # The client holds the body until it sees this; the device never has
+            # to deal with Expect, so the header is dropped below.
+            self.wfile.write(b"HTTP/1.1 100 Continue\r\n\r\n")
+            self.wfile.flush()
         conn = http.client.HTTPSConnection(UP_HOST, UP_PORT, context=_ctx, timeout=120)
+        headers_sent = False
         headers = {}
         for k, v in self.headers.items():
-            if k.lower() in HOP:
+            if k.lower() in DROP:
                 continue
             if k.lower() == "destination" and method in ("MOVE", "COPY"):
                 headers[k] = rewrite_destination(v)
@@ -156,39 +254,77 @@ class Handler(BaseHTTPRequestHandler):
         headers["Authorization"] = "Basic " + TOKEN
         headers["Host"] = UP_CN
         headers["Connection"] = "close"
-        if body:
-            headers["Content-Length"] = str(len(body))
         try:
-            conn.request(method, up_path, body=body if body else None, headers=headers)
+            # Explicit framing: putrequest + putheader + a manual pump means the
+            # body is never materialised, while the device still gets a clean
+            # Content-Length (or chunked, when the client used chunked).
+            conn.putrequest(method, up_path, skip_host=True, skip_accept_encoding=True)
+            for k, v in headers.items():
+                conn.putheader(k, v)
+            if body_slices is not None:
+                if body_len is None:
+                    conn.putheader("Transfer-Encoding", "chunked")
+                else:
+                    conn.putheader("Content-Length", str(body_len))
+            conn.endheaders()
+            if body_slices is not None:
+                for piece in body_slices:
+                    conn.send(chunk_frame(piece) if body_len is None else piece)
+                if body_len is None:
+                    conn.send(LAST_CHUNK)
             resp = conn.getresponse()
-            data = resp.read()
             status = resp.status
             # Windows WebClient prefers 200 over 204 for DELETE/LOCK
             if method in ("DELETE", "MKCOL", "UNLOCK") and status == 204:
                 status = 200
             self.close_connection = True
             self.send_response(status, resp.reason if status != 200 else "OK")
-            skip = set(HOP)
+            up_len = resp.getheader("Content-Length")
+            up_chunked = "chunked" in (resp.getheader("Transfer-Encoding") or "").lower()
             for k, v in resp.getheaders():
-                if k.lower() in skip:
+                lk = k.lower()
+                if lk in HOP and lk not in ("content-length", "transfer-encoding"):
                     continue
+                if lk in ("content-length", "transfer-encoding"):
+                    continue  # re-emitted below, framed for this hop
                 self.send_header(k, v)
-            # HEAD must not carry a body; Content-Length must match what we write.
-            out = b"" if method == "HEAD" else data
-            self.send_header("Content-Length", str(len(out)))
+            bodyless = method == "HEAD" or status in (204, 304)
+            if bodyless:
+                if method == "HEAD" and up_len is not None:
+                    self.send_header("Content-Length", up_len)
+            elif up_len is not None and not up_chunked:
+                self.send_header("Content-Length", up_len)
+            else:
+                self.send_header("Transfer-Encoding", "chunked")
             self.send_header("Connection", "close")
             self.send_header("MS-Author-Via", "DAV")
             self.end_headers()
-            if out:
-                self.wfile.write(out)
+            headers_sent = True
+            if not bodyless:
+                chunked_out = up_len is None or up_chunked
+                while True:
+                    data = resp.read(CHUNK_SIZE)
+                    if not data:
+                        break
+                    self.wfile.write(chunk_frame(data) if chunked_out else data)
+                if chunked_out:
+                    self.wfile.write(LAST_CHUNK)
         except Exception as e:
+            # Headers may already be on the wire, so the only honest signal left
+            # is to abort the connection instead of appending a 502 body.
             msg = f"{type(e).__name__}: {e}".encode()
             self.close_connection = True
-            self.send_response(502)
-            self.send_header("Content-Length", str(len(msg)))
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.wfile.write(msg)
+            if headers_sent:
+                try:
+                    self.wfile.write(msg)
+                except OSError:
+                    pass
+            else:
+                self.send_response(502)
+                self.send_header("Content-Length", str(len(msg)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(msg)
         finally:
             try:
                 conn.close()

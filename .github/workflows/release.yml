@@ -64,7 +64,30 @@ jobs:
         with:
           name: dist
           path: dist/
+      - uses: actions/checkout@v7
+      - name: Extract the CHANGELOG section for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - "$TAG" <<'PY'
+          import pathlib, re, sys
+
+          version = sys.argv[1].lstrip("v")
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^##\s*\[{re.escape(version)}\].*?$", text, re.M)
+          if not match:
+              print(f"no CHANGELOG section for {version}", file=sys.stderr)
+              raise SystemExit(1)
+          rest = text[match.end():]
+          nxt = re.search(r"^##\s*\[", rest, re.M)
+          body = (rest[: nxt.start()] if nxt else rest).strip()
+          if not body:
+              print(f"CHANGELOG section for {version} is empty", file=sys.stderr)
+              raise SystemExit(1)
+          pathlib.Path("release-notes.md").write_text(body + "\n", encoding="utf-8")
+          print(f"{len(body)} chars extracted for {version}")
+          PY
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: release-notes.md
