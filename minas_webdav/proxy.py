@@ -279,7 +279,12 @@ class Handler(BaseHTTPRequestHandler):
                 status = 200
             self.close_connection = True
             self.send_response(status, resp.reason if status != 200 else "OK")
+            # Never echo upstream framing values blindly: a compromised or buggy
+            # device could smuggle CR/LF into a header we re-emit
+            # (CodeQL py/http-response-splitting).
             up_len = resp.getheader("Content-Length")
+            if up_len is not None and not up_len.strip().isdigit():
+                up_len = None
             up_chunked = "chunked" in (resp.getheader("Transfer-Encoding") or "").lower()
             for k, v in resp.getheaders():
                 lk = k.lower()
@@ -287,6 +292,8 @@ class Handler(BaseHTTPRequestHandler):
                     continue
                 if lk in ("content-length", "transfer-encoding"):
                     continue  # re-emitted below, framed for this hop
+                if "\r" in v or "\n" in v or "\r" in k or "\n" in k:
+                    continue  # header injection attempt -> drop it
                 self.send_header(k, v)
             bodyless = method == "HEAD" or status in (204, 304)
             if bodyless:
