@@ -9,14 +9,14 @@ import subprocess
 import sys
 import unittest
 
+from minas_webdav import __version__
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 class TestPackage(unittest.TestCase):
     def test_version_is_semver(self):
-        import minas_webdav
-
-        self.assertRegex(minas_webdav.__version__, r"^\d+\.\d+\.\d+$")
+        self.assertRegex(__version__, r"^\d+\.\d+\.\d+$")
 
     def test_example_config_parses(self):
         path = ROOT / "minas_webdav" / "minas_config.example.json"

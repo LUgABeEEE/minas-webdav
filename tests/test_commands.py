@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 
+from minas_webdav import __version__ as package_version
 from minas_webdav import cli
 
 DATA = "/pool0/data"
@@ -367,15 +368,13 @@ class TestDf(unittest.TestCase):
 
 class TestVersionFlag(unittest.TestCase):
     def test_version_exits_zero_and_prints_version(self):
-        import minas_webdav
-
         parser = cli.build_parser()
         out = io.StringIO()
         with redirect_stdout(out):
             with self.assertRaises(SystemExit) as ctx:
                 parser.parse_args(["--version"])
         self.assertEqual(ctx.exception.code, 0)
-        self.assertIn(minas_webdav.__version__, out.getvalue())
+        self.assertIn(package_version, out.getvalue())
 
 
 if __name__ == "__main__":
