@@ -132,12 +132,20 @@ MINAS_STAGE_DIR=/mnt/nas/_incoming \
 
 ### 挂盘（可选）
 
+代理会把 `/pool0/data` 映射成盘符根目录（`PROPFIND /` 不再打回 451），所以挂上就能看到整个存储池。
+
 Windows（映射为 N 盘）：
 
 ```powershell
+net start WebClient            # 一次性：WebDAV 重定向器服务（需要管理员）
 .\scripts\挂载NAS为N盘.ps1     # 自动拉起代理 + net use N:
 .\scripts\删除N盘文件.ps1 <路径> # 删掉资源管理器删不动的文件
 ```
+
+Windows 侧两个前置条件（否则 `net use` 报 **System error 67**）：
+
+- `WebClient` 服务必须是 **Running**（`Get-Service WebClient`；默认 Manual，需管理员启动）
+- `HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters\BasicAuthLevel` 必须是 **2**（允许明文 HTTP），默认 1 只允许 HTTPS
 
 Linux（需要 `davfs2`，仓库不负责安装）：
 
@@ -145,6 +153,11 @@ Linux（需要 `davfs2`，仓库不负责安装）：
 python3 -m minas_webdav proxy &          # 127.0.0.1:8899
 sudo mount -t davfs http://127.0.0.1:8899/ /mnt/nas-n
 ```
+
+实测（2026-11-05，`Microsoft-WebDAV-MiniRedir/10.0.26300`）：40 MB / 300 MB 拷贝、改名、删除、建目录全部通过，
+拷贝期间代理进程常驻内存约 **25 MB**（不随文件大小增长）；大文件上限由
+`FileSizeLimitInBytes`（默认约 4 GB）决定。排查客户端行为时设 `MINAS_PROXY_DEBUG=1`，
+代理会把每个请求的方法、路径与请求头打到 stderr。
 
 不挂盘不影响任何 CLI/MCP 功能。
 

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-11-05
+
+### Fixed
+
+- **Mounting a drive actually works now.** WebDAV clients probe `PROPFIND /` when
+  they mount, and the device answers 451 for the bare root, so `net use N:` ended
+  in `System error 67` no matter what else worked. The proxy now maps `/` onto
+  the data root (`map_to_root`).
+- **Zero-length PUT keeps its framing.** WebClient opens a file with
+  `Content-Length: 0`; the proxy used to drop the header entirely and the device
+  answered 500, so every copy through a mounted drive failed.
+- **`PROPPATCH` is answered locally with a 207 echo.** The device returns 405,
+  which WebClient treats as fatal: it uploads the file, sees the property update
+  fail, deletes it again and reports "the device attached to the system is not
+  functioning".
+- **`Destination` gets the same root mapping as the request target**, so renaming
+  or moving inside a mounted drive no longer ends in a 500.
+
+### Added
+
+- `MINAS_PROXY_DEBUG=1` logs each proxied request with its method, path and
+  headers — the only practical way to see what a mounted-drive client sends.
+- `scripts/挂载NAS为N盘.ps1` now preflights the WebClient service and
+  `BasicAuthLevel`, waits for the proxy port, and mounts `/` (the pool) instead of
+  a sub-path.
+
+### Verified
+
+- Against the device through a real `net use N:` mount (Microsoft-WebDAV-MiniRedir
+  10.0.26300): 40 MB and 300 MB copies, rename, delete, mkdir — all byte-identical
+  hashes afterwards, proxy RSS steady at ~25 MB.
+- CLI-style paths keep working: `/pool0/data/...` is passed through untouched.
+
 ## [0.3.6] - 2026-11-05
 
 ### Fixed
@@ -330,7 +363,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...v0.3.4

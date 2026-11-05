@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import http.client
 import os
+import re
 import ssl
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,12 +39,13 @@ UP_PASS = ""
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 8899
 UP_CN = ""
+UP_ROOT = "/pool0/data"
 TOKEN = ""
 _ctx: ssl.SSLContext | None = None
 
 
 def _init() -> None:
-    global UP_HOST, UP_PORT, UP_USER, UP_PASS, LISTEN_HOST, LISTEN_PORT, UP_CN, TOKEN, _ctx
+    global UP_HOST, UP_PORT, UP_USER, UP_PASS, LISTEN_HOST, LISTEN_PORT, UP_CN, UP_ROOT, TOKEN, _ctx
     from .cli import client_ctx, resolve_server_cn
 
     cfg = _mconf.apply_env()
@@ -53,6 +55,7 @@ def _init() -> None:
     UP_PASS = os.environ.get("MINAS_PASS", "")
     LISTEN_HOST = cfg.get("proxy", {}).get("listen_host", "127.0.0.1")
     LISTEN_PORT = int(cfg.get("proxy", {}).get("listen_port", 8899))
+    UP_ROOT = str(cfg.get("data_root") or os.environ.get("MINAS_DATA_ROOT") or "/pool0/data")
     UP_CN = cfg.get("cn") or os.environ.get("MINAS_CN", "")
     if not UP_CN:
         # Host/SNI must be the device CN — probe the server cert like the CLI does.
@@ -159,6 +162,26 @@ def chunk_frame(data: bytes) -> bytes:
     return b"%x\r\n%s\r\n" % (len(data), data)
 
 
+def map_to_root(path: str, root: str) -> str:
+    """Expose ``root`` as the drive root of the proxy.
+
+    WebDAV clients mount the proxy at ``/`` and immediately PROPFIND ``/`` plus
+    ``/DavWWWRoot``-style paths. The device answers 451 for ``/`` (its WebDAV
+    share lives under the data root), which is exactly why ``net use N:`` used to
+    fail with "System error 67" even though every other request worked. Mapping
+    ``/`` onto ``root`` makes a mounted drive show the storage pool, while paths
+    that already start with the root are left untouched for CLI-style callers.
+    """
+    root = root.rstrip("/")
+    if not root:
+        return path
+    if path in ("", "/"):
+        return root + "/"
+    if path == root or path.startswith(root + "/") or path.startswith(root + "?"):
+        return path
+    return root + path
+
+
 def ascii_path(path: str) -> str:
     """Keep already-encoded paths; encode raw non-ascii for upstream."""
     try:
@@ -207,6 +230,27 @@ def rewrite_destination(value: str) -> str:
     return ascii_path(sanitize_target(raw))
 
 
+def proppatch_response(path: str, body: bytes) -> bytes:
+    """Answer ``PROPPATCH`` locally with a 207 echo.
+
+    The device answers 405 to PROPPATCH, and Windows WebClient treats that as
+    fatal: it uploads the file, sees the property update fail, deletes the file
+    and reports "the device attached to the system is not functioning". Echoing
+    the requested properties back as ``200 OK`` is what a WebDAV server that
+    cannot store dead properties is supposed to do.
+    """
+    match = re.search(rb"<(?:[A-Za-z_][\w.-]*:)?prop\b[^>]*>(.*?)</(?:[A-Za-z_][\w.-]*:)?prop>", body, re.S)
+    inner = match.group(1) if match else b""
+    return (
+        b'<?xml version="1.0" encoding="utf-8"?>'
+        b'<D:multistatus xmlns:D="DAV:"><D:response>'
+        b"<D:href>" + ascii_path(path).encode() + b"</D:href>"
+        b"<D:propstat><D:prop>" + inner + b"</D:prop>"
+        b"<D:status>HTTP/1.1 200 OK</D:status></D:propstat>"
+        b"</D:response></D:multistatus>"
+    )
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -225,8 +269,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _proxy(self, method):
+        if os.environ.get("MINAS_PROXY_DEBUG"):
+            # Debugging aid: mounted-drive clients (WebClient, davfs2) send header
+            # combinations that are impossible to guess from `curl`.
+            head = {k: v for k, v in self.headers.items() if k.lower() != "authorization"}
+            sys.stderr.write(f"DEBUG {method} {self.path} headers={head!r}\n")
+            sys.stderr.flush()
         try:
-            up_path = ascii_path(sanitize_target(self.path))
+            up_path = ascii_path(map_to_root(sanitize_target(self.path), UP_ROOT))
         except ValueError as exc:
             self._bad_request(str(exc))
             return
@@ -248,7 +298,9 @@ class Handler(BaseHTTPRequestHandler):
             if k.lower() in DROP:
                 continue
             if k.lower() == "destination" and method in ("MOVE", "COPY"):
-                headers[k] = rewrite_destination(v)
+                # A mounted drive addresses the destination relative to "/", so it
+                # needs the same root mapping as the request target.
+                headers[k] = map_to_root(rewrite_destination(v), UP_ROOT)
                 continue
             headers[k] = v
         headers["Authorization"] = "Basic " + TOKEN
@@ -261,11 +313,14 @@ class Handler(BaseHTTPRequestHandler):
             conn.putrequest(method, up_path, skip_host=True, skip_accept_encoding=True)
             for k, v in headers.items():
                 conn.putheader(k, v)
-            if body_slices is not None:
-                if body_len is None:
-                    conn.putheader("Transfer-Encoding", "chunked")
-                else:
-                    conn.putheader("Content-Length", str(body_len))
+            # Always declare the body length, even when it is zero: WebClient opens
+            # a file with a `Content-Length: 0` PUT, and a request with neither
+            # Content-Length nor Transfer-Encoding makes the device answer 500
+            # (measured 2026-11-05 against nginx/1.24.0).
+            if body_slices is not None and body_len is None:
+                conn.putheader("Transfer-Encoding", "chunked")
+            else:
+                conn.putheader("Content-Length", str(body_len or 0))
             conn.endheaders()
             if body_slices is not None:
                 for piece in body_slices:
@@ -360,7 +415,22 @@ class Handler(BaseHTTPRequestHandler):
         self._proxy("PROPFIND")
 
     def do_PROPPATCH(self):
-        self._proxy("PROPPATCH")
+        # Answered locally: the device returns 405, which WebClient turns into a
+        # failed copy (it uploads, then deletes the file again).
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length) if length > 0 else b""
+        payload = proppatch_response(self.path, body)
+        self.close_connection = True
+        self.send_response(207, "Multi-Status")
+        self.send_header("Content-Type", 'application/xml; charset="utf-8"')
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.send_header("MS-Author-Via", "DAV")
+        self.end_headers()
+        self.wfile.write(payload)
 
     def do_MKCOL(self):
         self._proxy("MKCOL")
