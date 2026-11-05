@@ -78,3 +78,44 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip coverage
+      - run: python -m pip install -e ".[mcp,dev]"
+      - name: Measure and enforce the coverage floor
+        # Ratchet, not a target: the measured baseline on 2026-11-05 was 49%
+        # (mcp_server/probe/proxy are thin wrappers over the device), so 48
+        # catches regressions without failing on incidental churn. Raise it
+        # whenever real tests land.
+        run: |
+          python -m coverage run --source=minas_webdav -m unittest discover -s tests
+          python -m coverage report --fail-under=48
+
+  # Single stable context for branch protection: matrix job names carry the
+  # interpreter version, so requiring them directly would break every time the
+  # matrix changes.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [test, lint, audit, package, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail unless every CI job succeeded
+        env:
+          TEST: ${{ needs.test.result }}
+          LINT: ${{ needs.lint.result }}
+          AUDIT: ${{ needs.audit.result }}
+          PACKAGE: ${{ needs.package.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          echo "test=$TEST lint=$LINT audit=$AUDIT package=$PACKAGE coverage=$COVERAGE"
+          for r in "$TEST" "$LINT" "$AUDIT" "$PACKAGE" "$COVERAGE"; do
+            [ "$r" = "success" ] || { echo "not green: $r"; exit 1; }
+          done

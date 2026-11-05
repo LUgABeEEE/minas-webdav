@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI: a `coverage` job runs the suite under `coverage.py` and fails below 48%
+  (measured baseline 49% on 2026-11-05) — a ratchet, to be raised as real tests
+  land.
+- CI: a `ci-ok` aggregate job exists so branch protection can require one stable
+  context instead of the interpreter-specific matrix names. `master` now
+  requires `ci-ok` on pull requests.
+
 ### Changed
 
+- `dsh/package.json` is 0.3.3 and its README states the bundle version follows
+  the CLI version (the bundle is configuration only, so an unchanged bundle is
+  still republished with a new CLI patch).
 - `config.verified_ctx()` is now the single place that builds a CA-verified
   device context (TLS 1.2 floor included); `client.py` previously repeated
   `ssl.create_default_context(cafile=ca)` + `check_hostname = False` in three

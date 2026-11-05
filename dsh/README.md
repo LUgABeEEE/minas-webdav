@@ -4,9 +4,9 @@ DeepSeek Harness 的 [minas-webdav](https://github.com/LUgABeEEE/minas-webdav) �
 DSH 就会把小米智能存储（MINAS）的 MCP server 注册成一行 stdio 配置，模型侧出现 14 个
 `minas-webdav` 工具。
 
-> 版本说明：这个包的版本号跟的是**它自己的内容**（`cordis.patch.yml` + 说明），
-> 不跟着 CLI 的补丁号走。CLI 的当前版本看 PyPI 上的 `minas-webdav`，或者装完跑
-> `minas-webdav --version`。
+> 版本说明：这个包的版本号**跟随 CLI 的版本**（两边同名同号），方便一眼对上；
+> 只有 `cordis.patch.yml` 和说明文件，没有代码，内容不变时也会跟着发补丁号。
+> 装完跑 `minas-webdav --version` 看 CLI 实际版本。
 
 ## 先装 Python 那一半
 
