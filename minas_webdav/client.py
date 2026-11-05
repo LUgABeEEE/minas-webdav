@@ -113,7 +113,7 @@ def client_ctx() -> ssl.SSLContext:
     certs = find_certs()
     if certs:
         cert, key, ca = certs
-        ctx = ssl.create_default_context(cafile=ca)
+        ctx = _mconf.verified_ctx(ca)
         ctx.load_cert_chain(certfile=cert, keyfile=key)
         ctx.check_hostname = False
         return ctx
@@ -135,7 +135,7 @@ class MinasWebDAV:
         certs = find_certs()
         if with_mtls and certs:
             cert, key, ca = certs
-            ctx = ssl.create_default_context(cafile=ca)
+            ctx = _mconf.verified_ctx(ca)
             ctx.load_cert_chain(certfile=cert, keyfile=key)
             ctx.check_hostname = False
             return ctx
@@ -183,7 +183,7 @@ class MinasWebDAV:
             )
         cert, key, ca = certs
         cn = self._resolve_cn()
-        ctx = ssl.create_default_context(cafile=ca)
+        ctx = _mconf.verified_ctx(ca)
         ctx.load_cert_chain(certfile=cert, keyfile=key)
         ctx.check_hostname = False
 

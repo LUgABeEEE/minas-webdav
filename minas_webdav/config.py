@@ -50,6 +50,19 @@ def unverified_ctx() -> ssl.SSLContext:
     return ctx
 
 
+def verified_ctx(cafile: str | None = None) -> ssl.SSLContext:
+    """TLS 1.2+ context that trusts the device CA chain (``ca_chain.pem``).
+
+    Callers still disable hostname matching — the appliance certificate is
+    self-signed and its identity is pinned through ``Host``/``SNI`` — but the
+    protocol floor is pinned here so every context build shares one place where
+    CodeQL's ``py/insecure-protocol`` invariant holds.
+    """
+    ctx = ssl.create_default_context(cafile=cafile)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
 # ``%NAME%`` style variables are expanded by os.path.expandvars on Windows only.
 # Do it ourselves so a Windows-flavoured config still resolves on POSIX.
 _PCT_VAR = re.compile(r"%([A-Za-z_][A-Za-z0-9_]*)%")

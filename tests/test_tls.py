@@ -26,6 +26,11 @@ class TestTlsFloor(unittest.TestCase):
         # No cert trio in a clean checkout -> falls back to the unverified ctx.
         self.assertGreaterEqual(client_ctx().minimum_version, ssl.TLSVersion.TLSv1_2)
 
+    def test_verified_ctx_requires_tls12(self):
+        ctx = mconf.verified_ctx()
+        self.assertGreaterEqual(ctx.minimum_version, ssl.TLSVersion.TLSv1_2)
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
 
 if __name__ == "__main__":
     unittest.main()

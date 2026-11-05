@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `config.verified_ctx()` is now the single place that builds a CA-verified
+  device context (TLS 1.2 floor included); `client.py` previously repeated
+  `ssl.create_default_context(cafile=ca)` + `check_hostname = False` in three
+  places, which is also what kept the remaining `py/insecure-protocol` alerts
+  alive.
+
 ## [0.3.3] - 2026-11-05
 
 ### Security
