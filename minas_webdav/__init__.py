@@ -5,4 +5,4 @@ Talks to the NAS WebDAV endpoint (HTTPS :5000) directly: list, transfer,
 organize, probe capabilities, and run a local reverse proxy for drive mapping.
 """
 
-__version__ = "0.3.6"
+__version__ = "0.3.7"

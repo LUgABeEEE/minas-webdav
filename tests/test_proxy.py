@@ -74,6 +74,59 @@ class TestRequestFraming(unittest.TestCase):
         self.assertEqual(b"".join(proxy.iter_chunked(stream.readline, stream.read)), b"hello")
 
 
+class TestMapToRoot(unittest.TestCase):
+    """A mounted drive must show the storage pool, not the device's bare "/" (451)."""
+
+    ROOT = "/pool0/data"
+
+    def test_bare_root_becomes_the_data_root(self):
+        self.assertEqual(proxy.map_to_root("/", self.ROOT), "/pool0/data/")
+        self.assertEqual(proxy.map_to_root("", self.ROOT), "/pool0/data/")
+
+    def test_relative_paths_are_prefixed(self):
+        self.assertEqual(proxy.map_to_root("/我的照片", self.ROOT), "/pool0/data/我的照片")
+        self.assertEqual(proxy.map_to_root("/a/b?x=1", self.ROOT), "/pool0/data/a/b?x=1")
+
+    def test_already_prefixed_paths_are_untouched(self):
+        for path in ("/pool0/data", "/pool0/data/x", "/pool0/data/x?depth=1"):
+            with self.subTest(path=path):
+                self.assertEqual(proxy.map_to_root(path, self.ROOT), path)
+
+    def test_empty_root_is_a_no_op(self):
+        self.assertEqual(proxy.map_to_root("/x", ""), "/x")
+
+
+class TestProppatchEcho(unittest.TestCase):
+    """The device answers 405; WebClient needs a 207 echo or it deletes the file."""
+
+    def test_echoes_the_requested_properties(self):
+        body = (
+            b'<?xml version="1.0" encoding="utf-8"?>'
+            b'<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop>'
+            b'<Win32LastModifiedTime xmlns="urn:schemas-microsoft-com:"/>'
+            b"</D:prop></D:set></D:propertyupdate>"
+        )
+        out = proxy.proppatch_response("/a/b.txt", body)
+        self.assertIn(b"<Win32LastModifiedTime", out)
+        self.assertIn(b"HTTP/1.1 200 OK", out)
+        self.assertIn(b"<D:href>/a/b.txt</D:href>", out)
+
+    def test_empty_body_still_answers_multistatus(self):
+        out = proxy.proppatch_response("/x", b"")
+        self.assertIn(b"<D:multistatus", out)
+        self.assertIn(b"200 OK", out)
+
+
+class TestDestinationMapping(unittest.TestCase):
+    def test_root_relative_destination_gets_the_data_root(self):
+        dest = proxy.rewrite_destination("http://127.0.0.1:8899/_mounttest/x.bin")
+        self.assertEqual(proxy.map_to_root(dest, "/pool0/data"), "/pool0/data/_mounttest/x.bin")
+
+    def test_absolute_device_path_is_left_alone(self):
+        dest = proxy.rewrite_destination("http://127.0.0.1:8899/pool0/data/x.bin")
+        self.assertEqual(proxy.map_to_root(dest, "/pool0/data"), "/pool0/data/x.bin")
+
+
 class TestSanitizeTarget(unittest.TestCase):
     def test_origin_form_is_kept(self):
         for target in ("/", "/pool0/data", "/a%20b/c.txt?x=1"):
