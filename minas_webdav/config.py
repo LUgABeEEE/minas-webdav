@@ -39,11 +39,14 @@ def unverified_ctx() -> ssl.SSLContext:
     """TLS context that accepts the device's self-signed certificate.
 
     Public API only — ``ssl._create_unverified_context`` is private and has
-    changed between Python releases.
+    changed between Python releases. Certificate *identity* is pinned by the
+    device CN instead (``Host``/SNI), so verification is off; the protocol
+    floor stays at TLS 1.2 (the device runs nginx 1.24 and speaks TLS 1.2/1.3).
     """
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     return ctx
 
 

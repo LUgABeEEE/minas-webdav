@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-05
+
+### Security
+
+- **TLS floor pinned to 1.2.** `config.unverified_ctx()` built its context with
+  `ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)`, which still permits TLS 1.0/1.1 —
+  CodeQL `py/insecure-protocol` flagged six call sites. The context now sets
+  `minimum_version = TLSVersion.TLSv1_2`. Certificate verification stays off by
+  design (the self-signed chain is trusted explicitly via `ca_chain.pem` and the
+  identity is pinned by the device CN), and the device runs nginx 1.24, which
+  speaks TLS 1.2/1.3.
+- `tests/test_tls.py` pins the floor for both `unverified_ctx()` and
+  `client_ctx()`.
+
 ## [0.3.2] - 2026-11-05
 
 ### Added
@@ -239,7 +253,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping, and an MCP server behind the `[mcp]` extra.
 - Agent skill under `skill/` and integration notes under `docs/`.
 
-[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/LUgABeEEE/minas-webdav/compare/v0.2.0...v0.3.0
