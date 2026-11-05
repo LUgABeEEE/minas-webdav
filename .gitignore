@@ -16,3 +16,9 @@ credentials.env
 # broken venv snapshot (local only)
 .venv.broken*/
 .pytest_cache/
+
+# coverage artifacts (CI writes these; never commit them)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
